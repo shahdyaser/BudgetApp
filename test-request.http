@@ -1,0 +1,7 @@
+### Test Process Transaction API
+POST http://localhost:3000/api/process-transaction
+Content-Type: application/json
+
+{
+  "message": "credit card #5233 charged EGP 150.00 at Starbucks"
+}
