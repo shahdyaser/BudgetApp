@@ -50,15 +50,39 @@ async function getToEgpRate(currency: SupportedCurrency): Promise<number> {
 }
 
 function parseChargedAmount(message: string): { currency: SupportedCurrency; amount: number } | null {
-  // Example: "was charged for USD 20.00" OR "charged EGP 150.00" OR "charged for EUR 10.00" OR "charged for € 10.00"
-  // Intentionally anchored around the word "charged" so we don't accidentally pick up "Available limit ... EGP 153068"
-  const m = message.match(/charged(?:\s+for)?\s+(EGP|USD|EUR|€)\s*([\d,]+(?:\.\d+)?)/i);
-  if (!m) return null;
-  const raw = m[1].toUpperCase();
-  const currency: SupportedCurrency = raw === '€' ? 'EUR' : (raw as SupportedCurrency);
-  const amount = Number(m[2].replace(/,/g, ''));
-  if (!Number.isFinite(amount)) return null;
-  return { currency, amount };
+  // Examples:
+  // - "was charged for USD 20.00"
+  // - "charged EGP 150.00"
+  // - "Transfer reference ... of EGP 5000.00 has been debited ..."
+  // Intentionally anchored around payment verbs/phrases to avoid picking up "available limit ... EGP ..."
+  const m = message.match(
+    /(?:charged(?:\s+for)?|of)\s+(EGP|USD|EUR|€)\s*([\d,]+(?:\.\d+)?)(?:\s+has\s+been\s+(?:debited|credited))?/i
+  );
+  if (m) {
+    const raw = m[1].toUpperCase();
+    const currency: SupportedCurrency = raw === '€' ? 'EUR' : (raw as SupportedCurrency);
+    const amount = Number(m[2].replace(/,/g, ''));
+    if (Number.isFinite(amount)) return { currency, amount };
+  }
+
+  // Arabic patterns:
+  // - "تم خصم مبلغ  EGP 2070.00 ..."
+  // - "تم تنفيذ تحويل ... بمبلغ 50.50 ج.م ..."
+  const arabic1 = message.match(/(?:مبلغ|بمبلغ)\s*(EGP|USD|EUR|€)\s*([\d,]+(?:\.\d+)?)/i);
+  if (arabic1) {
+    const raw = arabic1[1].toUpperCase();
+    const currency: SupportedCurrency = raw === '€' ? 'EUR' : (raw as SupportedCurrency);
+    const amount = Number(arabic1[2].replace(/,/g, ''));
+    if (Number.isFinite(amount)) return { currency, amount };
+  }
+
+  const arabic2 = message.match(/(?:مبلغ|بمبلغ)\s*([\d,]+(?:\.\d+)?)\s*(?:ج\.?\s*م|جنيه(?:\s*مصري)?|EGP)/i);
+  if (arabic2) {
+    const amount = Number(arabic2[1].replace(/,/g, ''));
+    if (Number.isFinite(amount)) return { currency: 'EGP', amount };
+  }
+
+  return null;
 }
 
 function parseMerchant(message: string): string | null {
@@ -69,6 +93,35 @@ function parseMerchant(message: string): string | null {
   // Fallback: stop before a time / period / end
   const fallback = message.match(/\bat\s+(.+?)(?:\s+at\s+\d{1,2}:\d{2}\b|\.|$)/i);
   if (fallback?.[1]) return fallback[1].trim();
+
+  // Arabic card debit patterns:
+  // - "... عند SYMPL في 25/01/26 10:42 ..."
+  const arabicAt = message.match(/عند\s+(.+?)\s+في\s+\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/i);
+  if (arabicAt?.[1]) return arabicAt[1].trim();
+
+  // - "... من BDC 6TH OF OCTOBER في 21/12/25 ..."
+  // Use the last "من ... في <date>" occurrence to avoid capturing "من بطاقة ..."
+  const arabicFromMatches = Array.from(message.matchAll(/من\s+(.+?)\s+في\s+\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/gi));
+  if (arabicFromMatches.length > 0) {
+    const last = arabicFromMatches[arabicFromMatches.length - 1]?.[1];
+    if (last) return last.trim();
+  }
+
+  return null;
+}
+
+function parseCardLast4(message: string): string | null {
+  // Standard card suffix form: #5233
+  const hashCard = message.match(/#(\d{4})\b/);
+  if (hashCard?.[1]) return hashCard[1];
+
+  // Arabic card suffix form: **5822 or ****5822
+  const maskedCard = message.match(/\*{2,}\s*(\d{4})\b/);
+  if (maskedCard?.[1]) return maskedCard[1];
+
+  // Arabic account ending form: "المنتهي ب 0001" / "المنتهية بـ 5822"
+  const endingCard = message.match(/المنتهي(?:ة)?\s*ب(?:ـ)?\s*(\d{4})\b/i);
+  if (endingCard?.[1]) return endingCard[1];
 
   return null;
 }
@@ -101,7 +154,10 @@ function extractJsonObject(text: string): Record<string, any> | null {
 function isLikelyTransferMessage(message: string): boolean {
   const checks = [
     /\btransfer\b/i,
+    /تحويل/i,
+    /تحويل\s+لحظي/i,
     /\binstapay\b/i,
+    /ipn/i,
     /\biban\b/i,
     /\bswift\b/i,
     /\bsent to\b/i,
@@ -218,16 +274,22 @@ async function handleMessage(message: string) {
   const supabase = getSupabaseClient();
 
   // Extract data using regex (bank SMS style)
-  const cardMatch = message.match(/#(\d+)/);
+  const parsedCardLast4 = parseCardLast4(message);
   const charged = parseChargedAmount(message);
   const regexMerchant = parseMerchant(message);
-  const ai = await extractWithOpenRouter(message);
+  const transferDetectedByText = isLikelyTransferMessage(message);
 
-  let cardNumber = cardMatch ? cardMatch[1] : (ai?.card_last4 ?? null);
+  // Avoid unnecessary AI latency for clear transfer messages that already have amount/currency.
+  const needAI =
+    !transferDetectedByText &&
+    (!regexMerchant || !charged);
+  const ai = needAI ? await extractWithOpenRouter(message) : null;
+
+  let cardNumber = parsedCardLast4 ?? (ai?.card_last4 ?? null);
   let originalCurrency: SupportedCurrency = charged?.currency ?? ai?.currency ?? 'EGP';
   let originalAmount: number = charged?.amount ?? ai?.amount ?? 0;
   let merchantName = regexMerchant ?? ai?.merchant ?? 'Unknown Merchant';
-  const transferDetected = isLikelyTransferMessage(message) || ai?.is_transfer === true;
+  const transferDetected = transferDetectedByText || ai?.is_transfer === true;
 
   // Convert currency to EGP if needed (limits in the SMS are ignored by design)
   let amountEgp: number = 0;
