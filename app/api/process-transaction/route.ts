@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getSupabaseClient } from '@/lib/supabase';
 
-function getGenAI() {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new Error('Missing GEMINI_API_KEY environment variable');
-  }
-  return new GoogleGenerativeAI(key);
-}
-
 type SupportedCurrency = 'EGP' | 'USD' | 'EUR';
+const OPENROUTER_MODEL = 'qwen/qwen3-235b-a22b-thinking-2507';
 const fxCache: Partial<Record<SupportedCurrency, { rate: number; at: number }>> = {};
+
+type AIExtraction = {
+  merchant?: string | null;
+  card_last4?: string | null;
+  currency?: SupportedCurrency | null;
+  amount?: number | null;
+  category?: string | null;
+  is_transfer?: boolean | null;
+};
 
 async function getToEgpRate(currency: SupportedCurrency): Promise<number> {
   if (currency === 'EGP') return 1;
@@ -72,6 +73,124 @@ function parseMerchant(message: string): string | null {
   return null;
 }
 
+function normalizeCurrency(value: unknown): SupportedCurrency | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toUpperCase();
+  if (v === '€') return 'EUR';
+  if (v === 'EGP' || v === 'USD' || v === 'EUR') return v;
+  return null;
+}
+
+function extractJsonObject(text: string): Record<string, any> | null {
+  const direct = text.trim();
+  try {
+    return JSON.parse(direct);
+  } catch {
+    // fall through
+  }
+
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
+function isLikelyTransferMessage(message: string): boolean {
+  const checks = [
+    /\btransfer\b/i,
+    /\binstapay\b/i,
+    /\biban\b/i,
+    /\bswift\b/i,
+    /\bsent to\b/i,
+    /\breceived from\b/i,
+    /\bwallet\b/i,
+    /\bcash ?out\b/i,
+  ];
+  return checks.some((r) => r.test(message));
+}
+
+async function extractWithOpenRouter(message: string): Promise<AIExtraction | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY ?? process.env.qwen_api_key;
+  if (!apiKey) return null;
+
+  const prompt = `Extract transaction details from this bank message.
+Return ONLY valid JSON (no markdown, no extra text) with this exact schema:
+{
+  "merchant": string|null,
+  "card_last4": string|null,
+  "currency": "EGP"|"USD"|"EUR"|null,
+  "amount": number|null,
+  "category": string|null,
+  "is_transfer": boolean|null
+}
+Rules:
+- merchant should be just merchant name, no date/time/limit text.
+- If message looks like money transfer, set is_transfer=true and category="Transfers".
+- If unknown, use null.
+Message:
+${message}`;
+
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a strict financial message parser that outputs only JSON.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('OpenRouter error:', res.status, errText);
+      return null;
+    }
+
+    const json: any = await res.json();
+    const content = json?.choices?.[0]?.message?.content;
+    if (!content) return null;
+
+    const rawText =
+      typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content.map((p) => (typeof p === 'string' ? p : p?.text || '')).join('\n')
+          : String(content);
+
+    const parsed = extractJsonObject(rawText);
+    if (!parsed) return null;
+
+    const amount = Number(parsed.amount);
+    return {
+      merchant: typeof parsed.merchant === 'string' ? parsed.merchant.trim() : null,
+      card_last4: typeof parsed.card_last4 === 'string' ? parsed.card_last4.trim() : null,
+      currency: normalizeCurrency(parsed.currency),
+      amount: Number.isFinite(amount) ? amount : null,
+      category: typeof parsed.category === 'string' ? parsed.category.trim() : null,
+      is_transfer: typeof parsed.is_transfer === 'boolean' ? parsed.is_transfer : null,
+    };
+  } catch (error) {
+    console.error('OpenRouter extraction failed:', error);
+    return null;
+  }
+}
+
 async function readMessage(request: NextRequest): Promise<string | null> {
   const contentType = request.headers.get('content-type') ?? '';
 
@@ -97,110 +216,80 @@ async function readMessage(request: NextRequest): Promise<string | null> {
 
 async function handleMessage(message: string) {
   const supabase = getSupabaseClient();
-  const genAI = getGenAI();
 
   // Extract data using regex (bank SMS style)
   const cardMatch = message.match(/#(\d+)/);
   const charged = parseChargedAmount(message);
-  const merchantName = parseMerchant(message);
+  const regexMerchant = parseMerchant(message);
+  const ai = await extractWithOpenRouter(message);
 
-  const cardNumber = cardMatch ? cardMatch[1] : null;
-
-  if (!cardNumber || !charged || !merchantName) {
-    return NextResponse.json(
-      { error: 'Could not extract required information from message' },
-      { status: 400 }
-    );
-  }
+  let cardNumber = cardMatch ? cardMatch[1] : (ai?.card_last4 ?? null);
+  let originalCurrency: SupportedCurrency = charged?.currency ?? ai?.currency ?? 'EGP';
+  let originalAmount: number = charged?.amount ?? ai?.amount ?? 0;
+  let merchantName = regexMerchant ?? ai?.merchant ?? 'Unknown Merchant';
+  const transferDetected = isLikelyTransferMessage(message) || ai?.is_transfer === true;
 
   // Convert currency to EGP if needed (limits in the SMS are ignored by design)
-  let amountEgp: number;
-  let originalCurrency: SupportedCurrency = charged.currency;
-  let originalAmount: number = charged.amount;
-
-  const rate = await getToEgpRate(charged.currency);
-  amountEgp = Number((charged.amount * rate).toFixed(2));
+  let amountEgp: number = 0;
+  try {
+    const rate = await getToEgpRate(originalCurrency);
+    amountEgp = Number((originalAmount * rate).toFixed(2));
+  } catch (error) {
+    // If FX lookup fails, keep value as-is so we still save the transaction.
+    console.error('FX conversion failed, using original amount:', error);
+    amountEgp = Number(originalAmount) || 0;
+  }
 
   // Check if we've seen this merchant before
-  const { data: existingTransactions, error: queryError } = await supabase
-    .from('transactions')
-    .select('category')
-    .eq('merchant', merchantName)
-    .limit(1);
+  const { data: existingTransactions, error: queryError } = merchantName !== 'Unknown Merchant'
+    ? await supabase
+        .from('transactions')
+        .select('category')
+        .eq('merchant', merchantName)
+        .limit(1)
+    : { data: null, error: null as any };
 
-  let category: string;
+  let category: string = 'Other';
 
   if (queryError) {
     console.error('Error querying transactions:', queryError);
   }
 
-  if (existingTransactions && existingTransactions.length > 0 && existingTransactions[0].category) {
+  if (transferDetected) {
+    merchantName = 'Transfer';
+    category = 'Transfers';
+  } else if (existingTransactions && existingTransactions.length > 0 && existingTransactions[0].category) {
     // Use cached category
     category = existingTransactions[0].category;
   } else {
-    // Use Gemini AI to categorize
-    try {
-      // Use gemini-1.5-flash model (or fallback to gemini-pro)
-      // Note: Model availability depends on your API key
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-1.5-flash',
-        // Alternative: try 'gemini-pro' if the above doesn't work
-      });
-
-      const prompt = `Categorize this transaction merchant into one of these categories: Food, Transport, Bills, Shopping, Entertainment, Healthcare, Education, Other.
-
-Merchant name: ${merchantName}
-
-Respond with ONLY the category name, nothing else.`;
-
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      category = response.text().trim();
-
-      // Validate category (fallback to 'Other' if not recognized)
-      const validCategories = ['Food', 'Transport', 'Bills', 'Shopping', 'Entertainment', 'Healthcare', 'Education', 'Other'];
-      if (!validCategories.includes(category)) {
-        category = 'Other';
-      }
-    } catch (aiError: any) {
-      console.error('Gemini AI error:', aiError);
-      // If model not found, try gemini-pro as fallback
-      if (aiError?.message?.includes('404') || aiError?.message?.includes('not found')) {
-        try {
-          const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-pro' });
-          const prompt = `Categorize this transaction merchant into one of these categories: Food, Transport, Bills, Shopping, Entertainment, Healthcare, Education, Other.
-
-Merchant name: ${merchantName}
-
-Respond with ONLY the category name, nothing else.`;
-          const result = await fallbackModel.generateContent(prompt);
-          const response = await result.response;
-          category = response.text().trim();
-          const validCategories = ['Food', 'Transport', 'Bills', 'Shopping', 'Entertainment', 'Healthcare', 'Education', 'Other'];
-          if (!validCategories.includes(category)) {
-            category = 'Other';
-          }
-        } catch (fallbackError) {
-          console.error('Fallback model also failed:', fallbackError);
-          category = 'Other';
-        }
-      } else {
-        // Fallback to 'Other' if AI fails for other reasons
-        category = 'Other';
-      }
+    const validCategories = [
+      'Food',
+      'Transport',
+      'Bills',
+      'Shopping',
+      'Entertainment',
+      'Healthcare',
+      'Education',
+      'Transfers',
+      'Other',
+    ];
+    const aiCategory = ai?.category ?? null;
+    if (aiCategory && validCategories.includes(aiCategory)) {
+      category = aiCategory;
     }
   }
 
   // Auto-filter: Check if merchant contains 'Transfer' or 'ATM'
   const includeInInsights =
     !merchantName.toLowerCase().includes('transfer') &&
-    !merchantName.toLowerCase().includes('atm');
+    !merchantName.toLowerCase().includes('atm') &&
+    category !== 'Transfers';
 
   // Save to Supabase
   const { data: transaction, error: insertError } = await supabase
     .from('transactions')
     .insert({
-      card_last4: cardNumber,
+      card_last4: cardNumber || null,
       amount: amountEgp,
       merchant: merchantName,
       category: category,
@@ -222,7 +311,7 @@ Respond with ONLY the category name, nothing else.`;
     success: true,
     transaction: {
       id: transaction.id,
-      card_last4: cardNumber,
+      card_last4: cardNumber || null,
       amount: amountEgp,
       original_currency: originalCurrency,
       original_amount: originalAmount,
