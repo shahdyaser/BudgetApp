@@ -5,42 +5,23 @@ import { Transaction } from '@/lib/data';
 import { getTransactions, getUniqueCardNumbers } from '@/lib/data';
 import { updateInsightToggle } from '@/lib/actions';
 import { useRouter } from 'next/navigation';
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isToday, isSameDay } from 'date-fns';
-import { Eye, EyeOff, Plus, ShoppingCart, ShoppingBag, Fuel, Utensils, Car, Home, CreditCard, Receipt } from 'lucide-react';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths } from 'date-fns';
+import { Eye, EyeOff, Plus, Settings } from 'lucide-react';
 import TransactionEditModal from '@/components/transaction-edit-modal';
 import AddTransactionModal from '@/components/add-transaction-modal';
+import { useSettings } from '@/components/settings-context';
+import { getCategoryBadgeClass, getCategoryIconNode } from '@/lib/category-registry';
 
 interface DayData {
   date: Date;
   total: number;
 }
 
-const categoryIcons: Record<string, React.ReactNode> = {
-  'Food': <Utensils className="w-5 h-5" />,
-  'Shopping': <ShoppingBag className="w-5 h-5" />,
-  'Groceries': <ShoppingCart className="w-5 h-5" />,
-  'Transport': <Car className="w-5 h-5" />,
-  'Bills': <Receipt className="w-5 h-5" />,
-  'Entertainment': <Home className="w-5 h-5" />,
-  'Healthcare': <Home className="w-5 h-5" />,
-  'Education': <Home className="w-5 h-5" />,
-  'Other': <CreditCard className="w-5 h-5" />,
-};
+type Props = { onOpenSettings: () => void };
 
-const categoryColors: Record<string, string> = {
-  'Food': 'bg-orange-100 text-orange-700',
-  'Shopping': 'bg-purple-100 text-purple-700',
-  'Groceries': 'bg-green-100 text-green-700',
-  'Transport': 'bg-blue-100 text-blue-700',
-  'Bills': 'bg-red-100 text-red-700',
-  'Entertainment': 'bg-pink-100 text-pink-700',
-  'Healthcare': 'bg-teal-100 text-teal-700',
-  'Education': 'bg-yellow-100 text-yellow-700',
-  'Other': 'bg-gray-100 text-gray-700',
-};
-
-export default function DailyTab() {
+export default function DailyTab({ onOpenSettings }: Props) {
   const router = useRouter();
+  const { categories } = useSettings();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cardNumbers, setCardNumbers] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -94,7 +75,8 @@ export default function DailyTab() {
         const matchesCard = selectedCard === 'all' || 
           (selectedCard === 'cash' && !t.card_last4) ||
           (selectedCard !== 'cash' && t.card_last4 === selectedCard);
-        return matchesDate && matchesCard && t.include_in_insights;
+        // Daily totals should include all transactions (even excluded from insights/budget)
+        return matchesDate && matchesCard;
       });
 
       const total = dayTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
@@ -102,6 +84,16 @@ export default function DailyTab() {
     });
 
     setDaysData(data);
+  };
+
+  const setMonth = (month: Date) => {
+    const nextMonth = startOfMonth(month);
+    setCurrentMonth(nextMonth);
+
+    // If the selected day isn't in that month, move it to the 1st of the month.
+    if (!isSameMonth(selectedDate, nextMonth)) {
+      setSelectedDate(nextMonth);
+    }
   };
 
   const formatCompactNumber = (num: number): string => {
@@ -128,9 +120,8 @@ export default function DailyTab() {
     return matchesDate && matchesCard;
   });
 
-  const todayTotal = filteredTransactions
-    .filter(t => t.include_in_insights)
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+  // Daily total includes all transactions (even excluded from insights/budget)
+  const todayTotal = filteredTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
 
   const scrollToSelectedDay = () => {
     if (scrollRef.current && daysData.length > 0) {
@@ -163,19 +154,41 @@ export default function DailyTab() {
       <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-lg border-b border-purple-200/50 px-4 py-3">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-purple-900">Daily Transactions</h1>
-          <button className="p-2" aria-label="Search transactions">
-            <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+          <button className="p-2" aria-label="Open settings" onClick={onOpenSettings} type="button">
+            <Settings className="w-6 h-6 text-gray-700" />
           </button>
         </div>
       </div>
 
       {/* Month Display */}
       <div className="px-4 pt-4">
-        <h2 className="text-lg font-semibold text-purple-600">
-          {format(currentMonth, 'MMMM').toUpperCase()}
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMonth(subMonths(currentMonth, 1))}
+              className="w-10 h-10 rounded-xl bg-white shadow-sm border border-purple-100 flex items-center justify-center text-purple-700 active:scale-[0.98]"
+              aria-label="Previous month"
+              type="button"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setMonth(addMonths(currentMonth, 1))}
+              className="w-10 h-10 rounded-xl bg-white shadow-sm border border-purple-100 flex items-center justify-center text-purple-700 active:scale-[0.98]"
+              aria-label="Next month"
+              type="button"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            <h2 className="text-lg font-semibold text-purple-600">
+              {format(currentMonth, 'MMMM yyyy').toUpperCase()}
+            </h2>
+          </div>
+        </div>
       </div>
 
       {/* Days Carousel */}
@@ -223,7 +236,7 @@ export default function DailyTab() {
                 : 'bg-white text-purple-600 border border-purple-200'
             }`}
           >
-            All Cards
+            All
           </button>
           {cardNumbers.map(card => (
             <button
@@ -260,8 +273,8 @@ export default function DailyTab() {
         ) : (
           filteredTransactions.map((transaction) => {
             const tDate = parseISO(transaction.created_at);
-            const categoryIcon = categoryIcons[transaction.category] || categoryIcons['Other'];
-            const categoryColor = categoryColors[transaction.category] || categoryColors['Other'];
+            const categoryIcon = getCategoryIconNode(transaction.category, categories);
+            const categoryColor = getCategoryBadgeClass(transaction.category, categories);
 
             return (
               <div

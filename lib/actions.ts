@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createServerClient } from './supabase-server';
+import { DEFAULT_CATEGORIES, type CategoryConfig } from './category-registry';
 
 /**
  * Deletes a transaction by its ID
@@ -237,5 +238,122 @@ export async function upsertMonthlyBudget(month: string, amount: number) {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred',
     };
+  }
+}
+
+/**
+ * Seed default categories into the `categories` table if it's empty.
+ */
+export async function ensureDefaultCategories() {
+  try {
+    const supabase = createServerClient();
+
+    const { count, error: countError } = await supabase
+      .from('categories')
+      .select('id', { count: 'exact', head: true });
+
+    if (countError) {
+      return { success: false, error: countError.message };
+    }
+
+    if ((count || 0) > 0) {
+      return { success: true, seeded: false };
+    }
+
+    const rows = DEFAULT_CATEGORIES.map((c: CategoryConfig) => ({
+      name: c.name,
+      icon_key: c.icon_key,
+      color_key: c.color_key,
+    }));
+
+    const { error } = await supabase.from('categories').insert(rows);
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    revalidatePath('/');
+    return { success: true, seeded: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error occurred' };
+  }
+}
+
+export async function upsertCategory(input: { id?: string; name: string; icon_key: string; color_key: string }) {
+  try {
+    const supabase = createServerClient();
+    const { id, ...rest } = input;
+
+    const payload = id ? { id, ...rest } : rest;
+    const { data, error } = await supabase
+      .from('categories')
+      .upsert(payload, { onConflict: 'name' })
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+
+    revalidatePath('/');
+    return { success: true, category: data };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error occurred' };
+  }
+}
+
+export async function renameCategory(oldName: string, newName: string) {
+  try {
+    const supabase = createServerClient();
+
+    // Update categories table
+    const { error: catErr } = await supabase
+      .from('categories')
+      .update({ name: newName })
+      .eq('name', oldName);
+    if (catErr) return { success: false, error: catErr.message };
+
+    // Update historical transactions
+    const { error: txErr } = await supabase
+      .from('transactions')
+      .update({ category: newName })
+      .eq('category', oldName);
+    if (txErr) return { success: false, error: txErr.message };
+
+    // Update merchant settings mappings
+    const { error: msErr } = await supabase
+      .from('merchant_settings')
+      .update({ category_name: newName, updated_at: new Date().toISOString() })
+      .eq('category_name', oldName);
+    if (msErr) return { success: false, error: msErr.message };
+
+    revalidatePath('/');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error occurred' };
+  }
+}
+
+export async function upsertMerchantSetting(input: { merchant: string; category_name: string; image_url?: string | null }) {
+  try {
+    const supabase = createServerClient();
+
+    const { data, error } = await supabase
+      .from('merchant_settings')
+      .upsert(
+        {
+          merchant: input.merchant,
+          category_name: input.category_name,
+          image_url: input.image_url ?? null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'merchant' }
+      )
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+
+    revalidatePath('/');
+    return { success: true, merchantSetting: data };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error occurred' };
   }
 }

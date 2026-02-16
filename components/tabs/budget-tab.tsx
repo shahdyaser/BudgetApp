@@ -5,46 +5,18 @@ import { getMonthBudget, getMonthSpent, getDailySpending, getCategorySpending, g
 import { upsertMonthlyBudget } from '@/lib/actions';
 import { useRouter } from 'next/navigation';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isWithinInterval } from 'date-fns';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Edit2, Save, X } from 'lucide-react';
-import { ShoppingCart, ShoppingBag, Utensils, Car, Receipt, Gamepad2, Stethoscope, GraduationCap, Plane, Hotel, Coffee, Music, CreditCard } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
+import { Edit2, Save, X, Settings, CreditCard } from 'lucide-react';
 import TransactionDetailsModal from '@/components/transaction-details-modal';
 import { Transaction } from '@/lib/data';
+import { useSettings } from '@/components/settings-context';
+import { getCategoryBadgeClass, getCategoryChartFill, getCategoryIconNode } from '@/lib/category-registry';
 
-const categoryIcons: Record<string, React.ReactNode> = {
-  'Food': <Utensils className="w-5 h-5" />,
-  'Shopping': <ShoppingBag className="w-5 h-5" />,
-  'Groceries': <ShoppingCart className="w-5 h-5" />,
-  'Transport': <Car className="w-5 h-5" />,
-  'Bills': <Receipt className="w-5 h-5" />,
-  'Entertainment': <Gamepad2 className="w-5 h-5" />,
-  'Healthcare': <Stethoscope className="w-5 h-5" />,
-  'Education': <GraduationCap className="w-5 h-5" />,
-  'Travel': <Plane className="w-5 h-5" />,
-  'Accommodation': <Hotel className="w-5 h-5" />,
-  'Coffee': <Coffee className="w-5 h-5" />,
-  'Music': <Music className="w-5 h-5" />,
-  'Other': <CreditCard className="w-5 h-5" />,
-};
+type Props = { onOpenSettings: () => void };
 
-const categoryColors: Record<string, string> = {
-  'Food': 'bg-orange-100 text-orange-700',
-  'Shopping': 'bg-pink-100 text-pink-700',
-  'Groceries': 'bg-green-100 text-green-700',
-  'Transport': 'bg-blue-100 text-blue-700',
-  'Bills': 'bg-red-100 text-red-700',
-  'Entertainment': 'bg-pink-100 text-pink-700',
-  'Healthcare': 'bg-teal-100 text-teal-700',
-  'Education': 'bg-yellow-100 text-yellow-700',
-  'Travel': 'bg-indigo-100 text-indigo-700',
-  'Accommodation': 'bg-cyan-100 text-cyan-700',
-  'Coffee': 'bg-amber-100 text-amber-700',
-  'Music': 'bg-violet-100 text-violet-700',
-  'Other': 'bg-gray-100 text-gray-700',
-};
-
-export default function BudgetTab() {
+export default function BudgetTab({ onOpenSettings }: Props) {
   const router = useRouter();
+  const { categories } = useSettings();
   const [selectedMonth, setSelectedMonth] = useState(() => new Date());
   const [budget, setBudget] = useState<number | null>(null);
   const [spent, setSpent] = useState(0);
@@ -170,6 +142,10 @@ export default function BudgetTab() {
     };
   });
 
+  // Make the donut order deterministic: highest first.
+  // (Some data sources are already sorted, but we enforce it for the chart itself.)
+  const donutCategoryData = [...categoryData].sort((a, b) => Number(b.amount) - Number(a.amount));
+
   const topExpenditures = groupBy === 'category' ? categoryData : merchantData;
 
   const handleItemClick = (item: any) => {
@@ -202,7 +178,12 @@ export default function BudgetTab() {
     <div className="min-h-screen bg-gradient-to-b from-purple-50 via-purple-100 to-white pb-24">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-lg border-b border-purple-200/50 px-4 py-3">
-        <h1 className="text-xl font-bold text-purple-900">Budget</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-purple-900">Budget</h1>
+          <button className="p-2" aria-label="Open settings" onClick={onOpenSettings} type="button">
+            <Settings className="w-6 h-6 text-gray-700" />
+          </button>
+        </div>
       </div>
 
       {/* Month Carousel */}
@@ -211,6 +192,8 @@ export default function BudgetTab() {
           <button
             onClick={() => handleMonthChange('prev')}
             className="p-2 hover:bg-purple-100 rounded-full transition-colors"
+            aria-label="Previous month"
+            title="Previous month"
           >
             <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -222,6 +205,8 @@ export default function BudgetTab() {
           <button
             onClick={() => handleMonthChange('next')}
             className="p-2 hover:bg-purple-100 rounded-full transition-colors"
+            aria-label="Next month"
+            title="Next month"
           >
             <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -249,12 +234,16 @@ export default function BudgetTab() {
                 <button
                   onClick={handleSaveBudget}
                   className="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors"
+                aria-label="Save budget"
+                title="Save budget"
                 >
                   <Save className="w-5 h-5" />
                 </button>
                 <button
                   onClick={handleCancelEdit}
                   className="px-4 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+                aria-label="Cancel editing budget"
+                title="Cancel"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -271,6 +260,8 @@ export default function BudgetTab() {
               <button
                 onClick={handleEditBudget}
                 className="p-2 hover:bg-purple-100 rounded-full transition-colors"
+                aria-label="Edit budget"
+                title="Edit budget"
               >
                 <Edit2 className="w-5 h-5 text-purple-600" />
               </button>
@@ -376,6 +367,70 @@ export default function BudgetTab() {
         </div>
       )}
 
+      {/* Doughnut Chart (Category breakdown) */}
+      {!loading && categoryData.length > 0 && (
+        <div className="px-4 py-2">
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-700 mb-4">Spending by Category</h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+              <div className="h-[240px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Tooltip
+                      formatter={(value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                    />
+                    <Pie
+                      data={donutCategoryData}
+                      dataKey="amount"
+                      nameKey="category"
+                      innerRadius={70}
+                      outerRadius={95}
+                      paddingAngle={2}
+                      stroke="white"
+                      strokeWidth={2}
+                    >
+                      {donutCategoryData.map((entry: any) => (
+                        <Cell
+                          key={entry.category}
+                          fill={getCategoryChartFill(entry.category, categories)}
+                        />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="space-y-2">
+                {donutCategoryData.slice(0, 8).map((c: any) => (
+                  <div key={c.category} className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-3 h-3 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: getCategoryChartFill(c.category, categories) }}
+                        aria-hidden="true"
+                      />
+                      <span className="text-sm font-medium text-gray-900 truncate">{c.category}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs text-gray-500">{Number(c.percentage).toFixed(1)}%</span>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {Number(c.amount).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {donutCategoryData.length > 8 && (
+                  <div className="text-xs text-gray-500 pt-1">
+                    +{donutCategoryData.length - 8} more categories
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Expenditures */}
       {!loading && topExpenditures.length > 0 && (
         <div className="px-4 py-2">
@@ -409,41 +464,54 @@ export default function BudgetTab() {
             <div className="space-y-2">
               {topExpenditures.map((item, index) => {
                 const name = groupBy === 'category' ? item.category : item.merchant;
-                const icon = groupBy === 'category' 
-                  ? (categoryIcons[name] || categoryIcons['Other'])
-                  : null;
-                const color = groupBy === 'category'
-                  ? (categoryColors[name] || categoryColors['Other'])
-                  : 'bg-purple-100 text-purple-700';
+                const maxAmount = Number(topExpenditures?.[0]?.amount) || 0;
+                const amount = Number(item.amount) || 0;
+                const fillPct = maxAmount > 0 ? Math.min(100, (amount / maxAmount) * 100) : 0;
+                const barColor =
+                  groupBy === 'category'
+                    ? getCategoryChartFill(name, categories)
+                    : '#9333ea'; // purple-600 for merchants
+
+                const icon = groupBy === 'category' ? getCategoryIconNode(name, categories) : null;
+                const color = groupBy === 'category' ? getCategoryBadgeClass(name, categories) : 'bg-purple-100 text-purple-700';
 
                 return (
                   <div
                     key={index}
                     onClick={() => handleItemClick(item)}
-                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:shadow-md transition-all active:scale-[0.98] ${
-                      index === 0 ? (groupBy === 'category' ? 'bg-pink-50' : 'bg-purple-50') : 'bg-gray-50'
-                    }`}
+                    className="relative overflow-hidden flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:shadow-md transition-all active:scale-[0.98] bg-gray-50"
                   >
+                    {/* Relative bar (top item = 100%) */}
+                    <div className="absolute inset-0 bg-gray-50" />
+                    <div
+                      className="absolute inset-y-0 left-0"
+                      style={{ width: `${fillPct}%`, backgroundColor: barColor, opacity: 0.22 }}
+                      aria-hidden="true"
+                    />
+
                     {icon && (
-                      <div className={`w-10 h-10 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
+                      <div className={`relative z-10 w-10 h-10 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
                         {icon}
                       </div>
                     )}
                     {!icon && (
-                      <div className={`w-10 h-10 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
+                      <div className={`relative z-10 w-10 h-10 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
                         <CreditCard className="w-5 h-5" />
                       </div>
                     )}
-                    <div className="flex-1 min-w-0">
+                    <div className="relative z-10 flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 truncate">{name}</p>
-                      <p className="text-xs text-gray-500">{item.percentage.toFixed(1)}%</p>
+                      <p className="text-xs text-gray-500">
+                        {(budget ? (amount / budget) * 100 : Number(item.percentage)).toFixed(1)}%
+                        {budget ? ` of ${budget.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : ''}
+                      </p>
                     </div>
-                    <div className="text-right">
+                    <div className="relative z-10 text-right">
                       <p className="font-bold text-gray-900">
                         {item.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                       </p>
                     </div>
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="relative z-10 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>

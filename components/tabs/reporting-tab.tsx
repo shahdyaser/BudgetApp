@@ -5,41 +5,11 @@ import { getTransactions, getMonthBudget } from '@/lib/data';
 import { useRouter } from 'next/navigation';
 import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, isWithinInterval } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { ShoppingCart, ShoppingBag, Utensils, Car, Receipt, Gamepad2, Stethoscope, GraduationCap, Plane, Hotel, Coffee, Music, CreditCard } from 'lucide-react';
+import { CreditCard, Settings } from 'lucide-react';
 import TransactionDetailsModal from '@/components/transaction-details-modal';
 import { Transaction } from '@/lib/data';
-
-const categoryIcons: Record<string, React.ReactNode> = {
-  'Food': <Utensils className="w-5 h-5" />,
-  'Shopping': <ShoppingBag className="w-5 h-5" />,
-  'Groceries': <ShoppingCart className="w-5 h-5" />,
-  'Transport': <Car className="w-5 h-5" />,
-  'Bills': <Receipt className="w-5 h-5" />,
-  'Entertainment': <Gamepad2 className="w-5 h-5" />,
-  'Healthcare': <Stethoscope className="w-5 h-5" />,
-  'Education': <GraduationCap className="w-5 h-5" />,
-  'Travel': <Plane className="w-5 h-5" />,
-  'Accommodation': <Hotel className="w-5 h-5" />,
-  'Coffee': <Coffee className="w-5 h-5" />,
-  'Music': <Music className="w-5 h-5" />,
-  'Other': <CreditCard className="w-5 h-5" />,
-};
-
-const categoryColors: Record<string, string> = {
-  'Food': 'bg-orange-100 text-orange-700',
-  'Shopping': 'bg-pink-100 text-pink-700',
-  'Groceries': 'bg-green-100 text-green-700',
-  'Transport': 'bg-blue-100 text-blue-700',
-  'Bills': 'bg-red-100 text-red-700',
-  'Entertainment': 'bg-pink-100 text-pink-700',
-  'Healthcare': 'bg-teal-100 text-teal-700',
-  'Education': 'bg-yellow-100 text-yellow-700',
-  'Travel': 'bg-indigo-100 text-indigo-700',
-  'Accommodation': 'bg-cyan-100 text-cyan-700',
-  'Coffee': 'bg-amber-100 text-amber-700',
-  'Music': 'bg-violet-100 text-violet-700',
-  'Other': 'bg-gray-100 text-gray-700',
-};
+import { useSettings } from '@/components/settings-context';
+import { getCategoryBadgeClass, getCategoryIconNode } from '@/lib/category-registry';
 
 interface MonthlyData {
   month: string;
@@ -48,8 +18,18 @@ interface MonthlyData {
   saved: number;
 }
 
-export default function ReportingTab() {
+type DeltaRow = {
+  month: string;
+  amount: number;
+  delta: number | null;
+  deltaPct: number | null;
+};
+
+type Props = { onOpenSettings: () => void };
+
+export default function ReportingTab({ onOpenSettings }: Props) {
   const router = useRouter();
+  const { categories } = useSettings();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [dateFrom, setDateFrom] = useState<Date | undefined>(() => {
     const date = new Date();
@@ -67,6 +47,9 @@ export default function ReportingTab() {
   const [selectedItem, setSelectedItem] = useState<{ type: 'category' | 'merchant'; name: string } | null>(null);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+  const [monthsInRange, setMonthsInRange] = useState<Date[]>([]);
+  const [selectedDeltaCategory, setSelectedDeltaCategory] = useState<string>('');
+  const [selectedDeltaMerchant, setSelectedDeltaMerchant] = useState<string>('__ALL__');
 
   useEffect(() => {
     if (dateFrom && dateTo) {
@@ -92,6 +75,7 @@ export default function ReportingTab() {
 
       // Get all months in the date range
       const months = eachMonthOfInterval({ start: dateFrom, end: dateTo });
+      setMonthsInRange(months);
 
       // Calculate monthly data
       const monthlyDataPromises = months.map(async (month) => {
@@ -169,6 +153,21 @@ export default function ReportingTab() {
         .slice(0, 10);
 
       setMerchantData(merchantDataResult);
+
+      // Initialize delta selectors (category + merchant)
+      const allCategories = Array.from(new Set(filteredTransactionsData.map(t => t.category))).sort();
+      const nextCategory = allCategories.includes(selectedDeltaCategory)
+        ? selectedDeltaCategory
+        : (allCategories[0] || '');
+      setSelectedDeltaCategory(nextCategory);
+
+      const merchantsInCategory = nextCategory
+        ? Array.from(new Set(filteredTransactionsData.filter(t => t.category === nextCategory).map(t => t.merchant))).sort()
+        : [];
+      const nextMerchant = merchantsInCategory.includes(selectedDeltaMerchant)
+        ? selectedDeltaMerchant
+        : '__ALL__';
+      setSelectedDeltaMerchant(nextMerchant);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -203,11 +202,51 @@ export default function ReportingTab() {
         : merchantData.find(m => m.merchant === selectedItem.name)?.amount || 0)
     : 0;
 
+  const deltaCategories = Array.from(new Set(transactions.map(t => t.category))).sort();
+  const deltaMerchants = selectedDeltaCategory
+    ? Array.from(new Set(transactions.filter(t => t.category === selectedDeltaCategory).map(t => t.merchant))).sort()
+    : [];
+
+  const buildDeltaRows = (): DeltaRow[] => {
+    if (!selectedDeltaCategory || monthsInRange.length === 0) return [];
+
+    const series = monthsInRange.map((month) => {
+      const start = startOfMonth(month);
+      const end = endOfMonth(month);
+      const monthTx = transactions.filter((t) => {
+        const d = parseISO(t.created_at);
+        const inMonth = d >= start && d <= end;
+        const inCategory = t.category === selectedDeltaCategory;
+        const inMerchant = selectedDeltaMerchant === '__ALL__' ? true : t.merchant === selectedDeltaMerchant;
+        return inMonth && inCategory && inMerchant;
+      });
+      const amount = monthTx.reduce((sum, t) => sum + Number(t.amount), 0);
+      return { month: format(month, 'MMM yyyy'), amount };
+    });
+
+    return series.map((cur, idx) => {
+      if (idx === 0) {
+        return { month: cur.month, amount: cur.amount, delta: null, deltaPct: null };
+      }
+      const prev = series[idx - 1];
+      const delta = cur.amount - prev.amount;
+      const deltaPct = prev.amount === 0 ? null : (delta / prev.amount) * 100;
+      return { month: cur.month, amount: cur.amount, delta, deltaPct };
+    });
+  };
+
+  const deltaRows = buildDeltaRows();
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-50 via-purple-100 to-white pb-24">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-lg border-b border-purple-200/50 px-4 py-3">
-        <h1 className="text-xl font-bold text-purple-900">Reporting</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-purple-900">Reporting</h1>
+          <button className="p-2" aria-label="Open settings" onClick={onOpenSettings} type="button">
+            <Settings className="w-6 h-6 text-gray-700" />
+          </button>
+        </div>
       </div>
 
       {/* Date Range Selector */}
@@ -226,6 +265,7 @@ export default function ReportingTab() {
                     setDateFrom(startOfMonth(new Date(parseInt(year), parseInt(month) - 1)));
                   }
                 }}
+                aria-label="From month"
                 className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
@@ -240,6 +280,7 @@ export default function ReportingTab() {
                     setDateTo(endOfMonth(new Date(parseInt(year), parseInt(month) - 1)));
                   }
                 }}
+                aria-label="To month"
                 className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
@@ -318,6 +359,90 @@ export default function ReportingTab() {
         </div>
       )}
 
+      {/* Category Monthly Delta Table (Inflation / Month-to-month changes) */}
+      {!loading && monthsInRange.length > 0 && deltaCategories.length > 0 && (
+        <div className="px-4 py-2">
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="text-sm font-semibold text-gray-700">Monthly Delta</h3>
+              <div className="text-xs text-gray-500">MoM change</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Category</label>
+                <select
+                  value={selectedDeltaCategory}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setSelectedDeltaCategory(next);
+                    setSelectedDeltaMerchant('__ALL__');
+                  }}
+                  aria-label="Select category for delta table"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                >
+                  {deltaCategories.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Merchant</label>
+                <select
+                  value={selectedDeltaMerchant}
+                  onChange={(e) => setSelectedDeltaMerchant(e.target.value)}
+                  aria-label="Select merchant for delta table"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                >
+                  <option value="__ALL__">All (category total)</option>
+                  {deltaMerchants.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {deltaRows.length === 0 ? (
+              <div className="text-center text-gray-400 py-6 text-sm">No data for this selection</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 border-b">
+                      <th className="py-2 pr-3">Month</th>
+                      <th className="py-2 pr-3">Amount</th>
+                      <th className="py-2 pr-3">Δ</th>
+                      <th className="py-2">Δ%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deltaRows.map((r) => {
+                      const deltaColor =
+                        r.delta === null ? 'text-gray-400' : r.delta > 0 ? 'text-red-600' : r.delta < 0 ? 'text-green-600' : 'text-gray-600';
+                      return (
+                        <tr key={r.month} className="border-b last:border-b-0">
+                          <td className="py-2 pr-3 font-medium text-gray-900 whitespace-nowrap">{r.month}</td>
+                          <td className="py-2 pr-3 text-gray-900 whitespace-nowrap">
+                            {r.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                          </td>
+                          <td className={`py-2 pr-3 whitespace-nowrap ${deltaColor}`}>
+                            {r.delta === null ? '—' : `${r.delta >= 0 ? '+' : ''}${r.delta.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
+                          </td>
+                          <td className={`py-2 whitespace-nowrap ${deltaColor}`}>
+                            {r.deltaPct === null ? '—' : `${r.deltaPct >= 0 ? '+' : ''}${r.deltaPct.toFixed(1)}%`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Top Expenditures */}
       {!loading && topExpenditures.length > 0 && (
         <div className="px-4 py-2">
@@ -351,12 +476,11 @@ export default function ReportingTab() {
             <div className="space-y-2">
               {topExpenditures.map((item, index) => {
                 const name = groupBy === 'category' ? item.category : item.merchant;
-                const icon = groupBy === 'category' 
-                  ? (categoryIcons[name] || categoryIcons['Other'])
-                  : null;
-                const color = groupBy === 'category'
-                  ? (categoryColors[name] || categoryColors['Other'])
-                  : 'bg-purple-100 text-purple-700';
+                const icon = groupBy === 'category' ? getCategoryIconNode(name, categories) : null;
+                const color =
+                  groupBy === 'category'
+                    ? getCategoryBadgeClass(name, categories)
+                    : 'bg-purple-100 text-purple-700';
 
                 return (
                   <div

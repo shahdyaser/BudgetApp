@@ -1,32 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { addManualTransaction } from '@/lib/actions';
 import { useRouter } from 'next/navigation';
-import { X, ShoppingCart, ShoppingBag, Fuel, Utensils, Car, Home, CreditCard, Receipt, Heart, Gamepad2, GraduationCap, Stethoscope, Music, Coffee, Plane, Hotel } from 'lucide-react';
+import { X } from 'lucide-react';
 import { format } from 'date-fns';
-
-interface CategoryOption {
-  name: string;
-  icon: React.ReactNode;
-  color: string;
-}
-
-const defaultCategories: CategoryOption[] = [
-  { name: 'Food', icon: <Utensils className="w-5 h-5" />, color: 'bg-orange-100 text-orange-700' },
-  { name: 'Groceries', icon: <ShoppingCart className="w-5 h-5" />, color: 'bg-green-100 text-green-700' },
-  { name: 'Shopping', icon: <ShoppingBag className="w-5 h-5" />, color: 'bg-purple-100 text-purple-700' },
-  { name: 'Transport', icon: <Car className="w-5 h-5" />, color: 'bg-blue-100 text-blue-700' },
-  { name: 'Bills', icon: <Receipt className="w-5 h-5" />, color: 'bg-red-100 text-red-700' },
-  { name: 'Entertainment', icon: <Gamepad2 className="w-5 h-5" />, color: 'bg-pink-100 text-pink-700' },
-  { name: 'Healthcare', icon: <Stethoscope className="w-5 h-5" />, color: 'bg-teal-100 text-teal-700' },
-  { name: 'Education', icon: <GraduationCap className="w-5 h-5" />, color: 'bg-yellow-100 text-yellow-700' },
-  { name: 'Travel', icon: <Plane className="w-5 h-5" />, color: 'bg-indigo-100 text-indigo-700' },
-  { name: 'Accommodation', icon: <Hotel className="w-5 h-5" />, color: 'bg-cyan-100 text-cyan-700' },
-  { name: 'Coffee', icon: <Coffee className="w-5 h-5" />, color: 'bg-amber-100 text-amber-700' },
-  { name: 'Music', icon: <Music className="w-5 h-5" />, color: 'bg-violet-100 text-violet-700' },
-  { name: 'Other', icon: <CreditCard className="w-5 h-5" />, color: 'bg-gray-100 text-gray-700' },
-];
+import { useSettings } from '@/components/settings-context';
+import { getCategoryBadgeClass, getCategoryIconNode } from '@/lib/category-registry';
+import { getMerchantDefaultCategories, getUniqueMerchants } from '@/lib/data';
 
 interface AddTransactionModalProps {
   isOpen: boolean;
@@ -40,9 +21,12 @@ export default function AddTransactionModal({
   onSuccess,
 }: AddTransactionModalProps) {
   const router = useRouter();
+  const { categories, merchantSettings } = useSettings();
   const [amount, setAmount] = useState('');
   const [merchant, setMerchant] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
+  const [merchantDefaults, setMerchantDefaults] = useState<Record<string, string>>({});
   const [timestamp, setTimestamp] = useState(() => {
     const now = new Date();
     return format(now, "yyyy-MM-dd'T'HH:mm");
@@ -54,23 +38,61 @@ export default function AddTransactionModal({
       // Reset form when modal opens
       setAmount('');
       setMerchant('');
-      setSelectedCategory('');
+      setSelectedCategory('Other');
       const now = new Date();
       setTimestamp(format(now, "yyyy-MM-dd'T'HH:mm"));
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    (async () => {
+      const [merchants, defaults] = await Promise.all([
+        getUniqueMerchants(),
+        getMerchantDefaultCategories(),
+      ]);
+      setMerchantOptions(merchants.sort((a, b) => a.localeCompare(b)));
+      setMerchantDefaults(defaults);
+    })();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const m = merchant.trim();
+    if (!m) {
+      setSelectedCategory('Other');
+      return;
+    }
+
+    const fromSettings = merchantSettings[m]?.category_name;
+    const fromHistory = merchantDefaults[m];
+    const next = fromSettings || fromHistory || 'Other';
+
+    // Only allow categories that exist (fallback to Other)
+    const exists = categories.some((c) => c.name === next);
+    setSelectedCategory(exists ? next : 'Other');
+  }, [merchant, merchantDefaults, merchantSettings, categories, isOpen]);
+
+  const categoryBadge = useMemo(
+    () => getCategoryBadgeClass(selectedCategory || 'Other', categories),
+    [selectedCategory, categories]
+  );
+  const categoryIcon = useMemo(
+    () => getCategoryIconNode(selectedCategory || 'Other', categories),
+    [selectedCategory, categories]
+  );
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!amount || !merchant || !selectedCategory) {
+    if (!amount || !merchant) {
       alert('Please fill in all required fields');
       return;
     }
 
-    const amountNum = parseFloat(amount);
+    const amountNum = parseFloat(amount.replace(',', '.'));
     if (isNaN(amountNum) || amountNum <= 0) {
       alert('Please enter a valid amount');
       return;
@@ -81,8 +103,8 @@ export default function AddTransactionModal({
     try {
       const result = await addManualTransaction(
         amountNum,
-        merchant,
-        selectedCategory,
+        merchant.trim(),
+        selectedCategory || 'Other',
         new Date(timestamp),
         undefined // No card number - cash transaction
       );
@@ -124,70 +146,64 @@ export default function AddTransactionModal({
               Amount *
             </label>
             <input
-              type="number"
-              step="0.01"
-              min="0"
+              type="text"
+              inputMode="decimal"
+              pattern="[0-9]*[.,]?[0-9]*"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
+              autoComplete="off"
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg"
               required
             />
           </div>
 
-          {/* Merchant Name */}
+          {/* Merchant (dropdown + searchable) */}
           <div>
             <label className="text-sm font-medium text-gray-700 mb-2 block">
-              Merchant Name *
+              Merchant *
             </label>
             <input
               type="text"
               value={merchant}
               onChange={(e) => setMerchant(e.target.value)}
-              placeholder="Enter merchant name"
+              placeholder="Start typing to search…"
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
               required
+              list="merchant-list"
             />
+            <datalist id="merchant-list">
+              {merchantOptions.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
           </div>
 
-          {/* Category Selection */}
+          {/* Category (auto from merchant) */}
           <div>
             <label className="text-sm font-medium text-gray-700 mb-2 block">
-              Category *
+              Category
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {defaultCategories.map((category) => (
-                <button
-                  key={category.name}
-                  type="button"
-                  onClick={() => setSelectedCategory(category.name)}
-                  className={`p-3 rounded-xl border-2 transition-all ${
-                    selectedCategory === category.name
-                      ? 'border-purple-600 bg-purple-50'
-                      : 'border-gray-200 bg-white hover:border-purple-300'
-                  }`}
-                >
-                  <div className={`w-10 h-10 rounded-full ${category.color} flex items-center justify-center mx-auto mb-2`}>
-                    {category.icon}
-                  </div>
-                  <p className={`text-xs font-medium ${
-                    selectedCategory === category.name
-                      ? 'text-purple-600'
-                      : 'text-gray-700'
-                  }`}>
-                    {category.name}
-                  </p>
-                </button>
-              ))}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-full ${categoryBadge} flex items-center justify-center`}>
+                {categoryIcon}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {selectedCategory || 'Other'}
+                </p>
+                <p className="text-xs text-gray-500">Auto-selected from merchant</p>
+              </div>
             </div>
           </div>
 
           {/* Timestamp */}
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-2 block">
+            <label htmlFor="add-txn-datetime" className="text-sm font-medium text-gray-700 mb-2 block">
               Date & Time *
             </label>
             <input
+              id="add-txn-datetime"
               type="datetime-local"
               value={timestamp}
               onChange={(e) => setTimestamp(e.target.value)}
@@ -214,7 +230,7 @@ export default function AddTransactionModal({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !amount || !merchant || !selectedCategory}
+              disabled={isSubmitting || !amount || !merchant}
               className="flex-1 px-4 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? 'Adding...' : 'Add Transaction'}

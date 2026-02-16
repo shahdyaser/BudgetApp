@@ -2,42 +2,7 @@
 
 import { Transaction } from '@/lib/data';
 import { format, parseISO } from 'date-fns';
-import { X, Eye, EyeOff } from 'lucide-react';
-import { updateInsightToggle } from '@/lib/actions';
-import { useRouter } from 'next/navigation';
-import { ShoppingCart, ShoppingBag, Utensils, Car, Receipt, Gamepad2, Stethoscope, GraduationCap, Plane, Hotel, Coffee, Music, CreditCard } from 'lucide-react';
-
-const categoryIcons: Record<string, React.ReactNode> = {
-  'Food': <Utensils className="w-5 h-5" />,
-  'Shopping': <ShoppingBag className="w-5 h-5" />,
-  'Groceries': <ShoppingCart className="w-5 h-5" />,
-  'Transport': <Car className="w-5 h-5" />,
-  'Bills': <Receipt className="w-5 h-5" />,
-  'Entertainment': <Gamepad2 className="w-5 h-5" />,
-  'Healthcare': <Stethoscope className="w-5 h-5" />,
-  'Education': <GraduationCap className="w-5 h-5" />,
-  'Travel': <Plane className="w-5 h-5" />,
-  'Accommodation': <Hotel className="w-5 h-5" />,
-  'Coffee': <Coffee className="w-5 h-5" />,
-  'Music': <Music className="w-5 h-5" />,
-  'Other': <CreditCard className="w-5 h-5" />,
-};
-
-const categoryColors: Record<string, string> = {
-  'Food': 'bg-orange-100 text-orange-700',
-  'Shopping': 'bg-pink-100 text-pink-700',
-  'Groceries': 'bg-green-100 text-green-700',
-  'Transport': 'bg-blue-100 text-blue-700',
-  'Bills': 'bg-red-100 text-red-700',
-  'Entertainment': 'bg-pink-100 text-pink-700',
-  'Healthcare': 'bg-teal-100 text-teal-700',
-  'Education': 'bg-yellow-100 text-yellow-700',
-  'Travel': 'bg-indigo-100 text-indigo-700',
-  'Accommodation': 'bg-cyan-100 text-cyan-700',
-  'Coffee': 'bg-amber-100 text-amber-700',
-  'Music': 'bg-violet-100 text-violet-700',
-  'Other': 'bg-gray-100 text-gray-700',
-};
+import { X } from 'lucide-react';
 
 interface TransactionDetailsModalProps {
   isOpen: boolean;
@@ -54,16 +19,24 @@ export default function TransactionDetailsModal({
   title,
   totalAmount,
 }: TransactionDetailsModalProps) {
-  const router = useRouter();
-
   if (!isOpen) return null;
 
-  const handleToggleInsights = async (id: string, currentValue: boolean) => {
-    const result = await updateInsightToggle(id, !currentValue);
-    if (result.success) {
-      router.refresh();
+  const sorted = [...transactions].sort(
+    (a, b) => parseISO(b.created_at).getTime() - parseISO(a.created_at).getTime()
+  );
+
+  const groups: Array<{ dayKey: string; day: Date; total: number; items: Transaction[] }> = [];
+  for (const t of sorted) {
+    const dt = parseISO(t.created_at);
+    const dayKey = format(dt, 'yyyy-MM-dd');
+    const last = groups[groups.length - 1];
+    if (!last || last.dayKey !== dayKey) {
+      groups.push({ dayKey, day: dt, total: Number(t.amount) || 0, items: [t] });
+    } else {
+      last.items.push(t);
+      last.total += Number(t.amount) || 0;
     }
-  };
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -92,64 +65,40 @@ export default function TransactionDetailsModal({
               <p>No transactions found</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {transactions.map((transaction) => {
-                const tDate = parseISO(transaction.created_at);
-                const categoryIcon = categoryIcons[transaction.category] || categoryIcons['Other'];
-                const categoryColor = categoryColors[transaction.category] || categoryColors['Other'];
+            <div className="space-y-5">
+              {groups.map((g, idx) => {
+                const isAlt = idx % 2 === 1;
+                const groupBg = isAlt ? 'bg-gray-50' : 'bg-white';
+                const rowBg = isAlt ? 'bg-white' : 'bg-gray-50';
 
                 return (
                   <div
-                    key={transaction.id}
-                    className={`bg-white rounded-xl p-4 shadow-sm flex items-center gap-3 border ${
-                      !transaction.include_in_insights ? 'opacity-60' : ''
-                    }`}
+                    key={g.dayKey}
+                    className={`rounded-2xl p-3 border border-gray-200/60 ${groupBg}`}
                   >
-                    {/* Category Icon */}
-                    <div className={`flex-shrink-0 w-12 h-12 rounded-full ${categoryColor} flex items-center justify-center`}>
-                      {categoryIcon}
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-semibold text-gray-500">
+                        {format(g.day, 'EEE, MMM d yyyy').toUpperCase()}
+                      </p>
+                      <p className="text-xs font-semibold text-gray-700">
+                        {g.total.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                      </p>
                     </div>
 
-                    {/* Transaction Details */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <h3 className="font-semibold text-gray-900 truncate">
-                          {transaction.merchant}
-                        </h3>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${categoryColor}`}>
-                          {transaction.category.toUpperCase()}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {format(tDate, 'MMM d, yyyy')}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {format(tDate, 'h:mm a')}
-                        </span>
-                        {transaction.card_last4 && (
-                          <span className="text-xs text-gray-500">
-                            #{transaction.card_last4}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Amount and Eye Icon */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleToggleInsights(transaction.id, transaction.include_in_insights)}
-                        className="p-1"
-                      >
-                        {transaction.include_in_insights ? (
-                          <Eye className="w-5 h-5 text-purple-600" />
-                        ) : (
-                          <EyeOff className="w-5 h-5 text-gray-400" />
-                        )}
-                      </button>
-                      <span className="text-lg font-bold text-purple-600 whitespace-nowrap">
-                        {Number(transaction.amount).toLocaleString()}
-                      </span>
+                    <div className="space-y-2">
+                      {g.items.map((t) => (
+                        <div
+                          key={t.id}
+                          className={`${rowBg} rounded-xl px-3 py-2 flex items-center justify-between gap-3 ${
+                            !t.include_in_insights ? 'opacity-60' : ''
+                          }`}
+                        >
+                          <p className="text-sm font-medium text-gray-900 truncate">{t.merchant}</p>
+                          <p className="text-sm font-semibold text-purple-600 whitespace-nowrap">
+                            {Number(t.amount).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );

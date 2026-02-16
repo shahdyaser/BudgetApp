@@ -17,6 +17,21 @@ export interface MonthlyBudget {
   amount: number;
 }
 
+export interface CategoryRow {
+  id: string;
+  name: string;
+  icon_key: string;
+  color_key: string;
+  created_at: string;
+}
+
+export interface MerchantSettingRow {
+  merchant: string;
+  category_name: string;
+  image_url: string | null;
+  updated_at: string;
+}
+
 /**
  * Fetch all transactions from Supabase
  */
@@ -34,6 +49,100 @@ export async function getTransactions(): Promise<Transaction[]> {
   }
 
   return data || [];
+}
+
+/**
+ * Fetch configured categories (Settings)
+ */
+export async function getCategories(): Promise<CategoryRow[]> {
+  const supabase = createServerClient();
+
+  const { data, error } = await supabase
+    .from('categories')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching categories:', error);
+    return [];
+  }
+
+  return (data as any) || [];
+}
+
+/**
+ * Fetch merchant settings (merchant -> category mapping + image)
+ */
+export async function getMerchantSettings(): Promise<MerchantSettingRow[]> {
+  const supabase = createServerClient();
+
+  const { data, error } = await supabase
+    .from('merchant_settings')
+    .select('*')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching merchant settings:', error);
+    return [];
+  }
+
+  return (data as any) || [];
+}
+
+/**
+ * Get unique merchants seen in transactions (most recent first)
+ */
+export async function getUniqueMerchants(): Promise<string[]> {
+  const supabase = createServerClient();
+
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('merchant, created_at')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching merchants:', error);
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const row of data || []) {
+    const m = (row as any)?.merchant;
+    if (m && !seen.has(m)) {
+      seen.add(m);
+      result.push(m);
+    }
+  }
+  return result;
+}
+
+/**
+ * Best-effort fallback category for each merchant (most recent transaction wins).
+ */
+export async function getMerchantDefaultCategories(): Promise<Record<string, string>> {
+  const supabase = createServerClient();
+
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('merchant, category, created_at')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching merchant default categories:', error);
+    return {};
+  }
+
+  const map: Record<string, string> = {};
+  for (const row of data || []) {
+    const merchant = (row as any)?.merchant as string | undefined;
+    const category = (row as any)?.category as string | undefined;
+    if (!merchant || !category) continue;
+    if (!map[merchant]) {
+      map[merchant] = category;
+    }
+  }
+  return map;
 }
 
 /**
