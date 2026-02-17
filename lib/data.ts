@@ -32,6 +32,15 @@ export interface MerchantSettingRow {
   updated_at: string;
 }
 
+function toLocalWallTimeIso(value: string): string {
+  // Keep date/time as entered (wall-clock) and strip timezone suffix to avoid UI shifts.
+  // Example: "2026-01-25T22:24:00+02:00" -> "2026-01-25T22:24:00"
+  // Example: "2026-01-25 22:24:00+00"    -> "2026-01-25T22:24:00"
+  return value
+    .replace(' ', 'T')
+    .replace(/(?:Z|[+\-]\d{2}:?\d{2})$/i, '');
+}
+
 /**
  * Fetch all transactions from Supabase
  */
@@ -48,7 +57,10 @@ export async function getTransactions(): Promise<Transaction[]> {
     return [];
   }
 
-  return data || [];
+  return (data || []).map((t: any) => ({
+    ...t,
+    created_at: typeof t.created_at === 'string' ? toLocalWallTimeIso(t.created_at) : t.created_at,
+  }));
 }
 
 /**

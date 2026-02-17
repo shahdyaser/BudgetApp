@@ -138,46 +138,21 @@ function parseCardLast4(message: string): string | null {
   return null;
 }
 
-function getCairoOffsetMinutes(atUtc: Date): number {
-  try {
-    const offsetPart = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Africa/Cairo',
-      timeZoneName: 'shortOffset',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-      .formatToParts(atUtc)
-      .find((p) => p.type === 'timeZoneName')?.value;
-
-    if (!offsetPart) return 120;
-    const match = offsetPart.match(/GMT([+\-])(\d{1,2})(?::?(\d{2}))?/i);
-    if (!match) return 120;
-
-    const sign = match[1] === '-' ? -1 : 1;
-    const hours = Number(match[2]);
-    const minutes = Number(match[3] ?? '0');
-    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 120;
-    return sign * (hours * 60 + minutes);
-  } catch {
-    // Fallback to Egypt winter offset if Intl offset extraction is unavailable.
-    return 120;
-  }
-}
-
 function parseMessageTimestamp(message: string): string | null {
   // Supports:
   // - "... on 21/12/25 14:03 ..."
   // - "... في 21/12/25 14:03 ..."
   const match = message.match(
-    /(?:\bon\b|في)\s+(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+|T)(\d{1,2}):(\d{2})/i
+    /(?:\bon\b|في)\s+(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+|T)(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i
   );
   if (!match) return null;
 
   const day = Number(match[1]);
   const month = Number(match[2]);
   const rawYear = Number(match[3]);
-  const hour = Number(match[4]);
+  let hour = Number(match[4]);
   const minute = Number(match[5]);
+  const ampm = (match[6] ?? '').toUpperCase();
   const year = rawYear < 100 ? 2000 + rawYear : rawYear;
 
   if (
@@ -193,11 +168,19 @@ function parseMessageTimestamp(message: string): string | null {
     return null;
   }
 
-  // Bank SMS time is local Egypt time. Convert it to UTC ISO for timestamptz.
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
-  const cairoOffsetMinutes = getCairoOffsetMinutes(utcGuess);
-  const utcMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0) - cairoOffsetMinutes * 60 * 1000;
-  const iso = new Date(utcMs).toISOString();
+  // Handle optional 12-hour suffix if present.
+  if (ampm === 'AM' && hour === 12) hour = 0;
+  if (ampm === 'PM' && hour < 12) hour += 12;
+
+  const yyyy = String(year);
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  const hh = String(hour).padStart(2, '0');
+  const min = String(minute).padStart(2, '0');
+
+  // Store as Egypt local timestamp (fixed +02:00 offset).
+  // This avoids shifting late-night local transactions to after midnight in UI.
+  const iso = `${yyyy}-${mm}-${dd}T${hh}:${min}:00+02:00`;
 
   return Number.isNaN(new Date(iso).getTime()) ? null : iso;
 }

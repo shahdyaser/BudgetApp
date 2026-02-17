@@ -313,6 +313,9 @@ export default function DailyTab({ onOpenSettings }: Props) {
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${categoryColor}`}>
                       {transaction.category.toUpperCase()}
                     </span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-600">
+                      {transaction.card_last4 ? `#${transaction.card_last4}` : 'Cash'}
+                    </span>
                     <span className="text-xs text-gray-500">
                       {format(tDate, 'h:mm a')}
                     </span>
