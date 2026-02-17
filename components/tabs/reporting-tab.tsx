@@ -150,6 +150,19 @@ export default function ReportingTab({ onOpenSettings }: Props) {
 
       setMerchantData(merchantDataResult);
 
+      if (selectedItem) {
+        const filtered = transactionsData.filter((t) => {
+          const tDate = parseISO(t.created_at);
+          const inRange = isWithinInterval(tDate, { start: dateFrom, end: dateTo });
+          const matchesFilter =
+            selectedItem.type === 'category'
+              ? t.category === selectedItem.name
+              : t.merchant === selectedItem.name;
+          return inRange && matchesFilter && t.include_in_insights;
+        });
+        setFilteredTransactions(filtered);
+      }
+
       // Initialize delta selectors (category + merchant)
       const allCategories = Array.from(new Set(filteredTransactionsData.map(t => t.category))).sort();
       const nextCategory = allCategories.includes(selectedDeltaCategory)
@@ -549,6 +562,7 @@ export default function ReportingTab({ onOpenSettings }: Props) {
           transactions={filteredTransactions}
           title={`${selectedItem.type === 'category' ? 'Category' : 'Merchant'}: ${selectedItem.name}`}
           totalAmount={selectedItemTotal}
+          onTransactionsChanged={loadData}
         />
       )}
     </div>

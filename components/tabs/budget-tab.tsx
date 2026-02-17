@@ -82,6 +82,19 @@ export default function BudgetTab({ onOpenSettings }: Props) {
         .slice(0, 10);
 
       setMerchantData(merchantDataResult);
+
+      if (selectedItem) {
+        const filtered = transactions.filter((t) => {
+          const tDate = parseISO(t.created_at);
+          const inMonth = tDate >= firstDayOfMonth && tDate <= lastDayOfMonth;
+          const matchesFilter =
+            selectedItem.type === 'category'
+              ? t.category === selectedItem.name
+              : t.merchant === selectedItem.name;
+          return inMonth && matchesFilter && t.include_in_insights;
+        });
+        setFilteredTransactions(filtered);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -543,6 +556,7 @@ export default function BudgetTab({ onOpenSettings }: Props) {
           transactions={filteredTransactions}
           title={`${selectedItem.type === 'category' ? 'Category' : 'Merchant'}: ${selectedItem.name}`}
           totalAmount={selectedItemTotal}
+          onTransactionsChanged={loadData}
         />
       )}
     </div>

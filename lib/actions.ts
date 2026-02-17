@@ -105,7 +105,7 @@ export async function updateTransactionCategory(
     const supabase = createServerClient();
     const scope: CategoryUpdateScope = options?.scope ?? 'merchant';
 
-    let query = supabase.from('transactions').update({ category: newCategory });
+    let query;
     if (scope === 'single') {
       if (!options?.transactionId) {
         return {
@@ -113,9 +113,19 @@ export async function updateTransactionCategory(
           error: 'transactionId is required when scope is single',
         };
       }
-      query = query.eq('id', options.transactionId);
+
+      // Mark this transaction as a manual override so future merchant-wide updates skip it.
+      query = supabase
+        .from('transactions')
+        .update({ category: newCategory, manual_category_override: true })
+        .eq('id', options.transactionId);
     } else {
-      query = query.eq('merchant', merchant);
+      // Merchant-wide updates should not overwrite transactions manually edited one-by-one.
+      query = supabase
+        .from('transactions')
+        .update({ category: newCategory })
+        .eq('merchant', merchant)
+        .or('manual_category_override.is.null,manual_category_override.eq.false');
     }
 
     const { data, error } = await query.select();

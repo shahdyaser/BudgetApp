@@ -16,6 +16,7 @@ create table if not exists public.transactions (
   amount numeric(10,2) not null,
   merchant text not null,
   category text not null,
+  manual_category_override boolean not null default false,
   card_last4 text null,
   include_in_insights boolean not null default true,
   raw_text text null
@@ -29,6 +30,7 @@ create index if not exists idx_transactions_category on public.transactions(cate
 alter table public.transactions add column if not exists merchant text;
 alter table public.transactions add column if not exists card_last4 text;
 alter table public.transactions add column if not exists raw_text text;
+alter table public.transactions add column if not exists manual_category_override boolean not null default false;
 
 -- ---------------------------------------------------------------------------
 -- categories: configurable icon/color/name
