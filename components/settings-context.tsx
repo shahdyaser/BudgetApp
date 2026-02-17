@@ -23,14 +23,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const [cats, ms] = await Promise.all([getCategories(), getMerchantSettings()]);
 
     if (cats && cats.length > 0) {
-      setCategories(
-        cats.map((c) => ({
-          id: c.id,
-          name: c.name,
-          icon_key: c.icon_key as any,
-          color_key: c.color_key as any,
-        }))
-      );
+      const fromDb = cats.map((c) => ({
+        id: c.id,
+        name: c.name,
+        icon_key: c.icon_key as any,
+        color_key: c.color_key as any,
+      }));
+      const existingNames = new Set(fromDb.map((c) => c.name));
+      const merged = [...fromDb, ...DEFAULT_CATEGORIES.filter((c) => !existingNames.has(c.name))];
+      setCategories(merged);
     } else {
       setCategories(DEFAULT_CATEGORIES);
     }

@@ -409,6 +409,8 @@ async function handleMessage(message: string) {
       'Entertainment',
       'Healthcare',
       'Education',
+      'Subscriptions',
+      'Installments',
       'Transfers',
       'Other',
     ];

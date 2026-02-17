@@ -9,7 +9,7 @@ import { CreditCard, Settings } from 'lucide-react';
 import TransactionDetailsModal from '@/components/transaction-details-modal';
 import { Transaction } from '@/lib/data';
 import { useSettings } from '@/components/settings-context';
-import { getCategoryBadgeClass, getCategoryIconNode } from '@/lib/category-registry';
+import { getCategoryBadgeClass, getCategoryChartFill, getCategoryIconNode } from '@/lib/category-registry';
 
 interface MonthlyData {
   month: string;
@@ -476,6 +476,13 @@ export default function ReportingTab({ onOpenSettings }: Props) {
             <div className="space-y-2">
               {topExpenditures.map((item, index) => {
                 const name = groupBy === 'category' ? item.category : item.merchant;
+                const maxAmount = Number(topExpenditures?.[0]?.amount) || 0;
+                const amount = Number(item.amount) || 0;
+                const fillPct = maxAmount > 0 ? Math.min(100, (amount / maxAmount) * 100) : 0;
+                const barColor =
+                  groupBy === 'category'
+                    ? getCategoryChartFill(name, categories)
+                    : '#9333ea';
                 const icon = groupBy === 'category' ? getCategoryIconNode(name, categories) : null;
                 const color =
                   groupBy === 'category'
@@ -486,30 +493,35 @@ export default function ReportingTab({ onOpenSettings }: Props) {
                   <div
                     key={index}
                     onClick={() => handleItemClick(item)}
-                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:shadow-md transition-all active:scale-[0.98] ${
-                      index === 0 ? (groupBy === 'category' ? 'bg-pink-50' : 'bg-purple-50') : 'bg-gray-50'
-                    }`}
+                    className="relative overflow-hidden flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:shadow-md transition-all active:scale-[0.98] bg-gray-50"
                   >
+                    <div className="absolute inset-0 bg-gray-50" />
+                    <div
+                      className="absolute inset-y-0 left-0"
+                      style={{ width: `${fillPct}%`, backgroundColor: barColor, opacity: 0.22 }}
+                      aria-hidden="true"
+                    />
+
                     {icon && (
-                      <div className={`w-10 h-10 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
+                      <div className={`relative z-10 w-10 h-10 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
                         {icon}
                       </div>
                     )}
                     {!icon && (
-                      <div className={`w-10 h-10 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
+                      <div className={`relative z-10 w-10 h-10 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
                         <CreditCard className="w-5 h-5" />
                       </div>
                     )}
-                    <div className="flex-1 min-w-0">
+                    <div className="relative z-10 flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 truncate">{name}</p>
                       <p className="text-xs text-gray-500">{item.percentage.toFixed(1)}%</p>
                     </div>
-                    <div className="text-right">
+                    <div className="relative z-10 text-right">
                       <p className="font-bold text-gray-900">
                         {item.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                       </p>
                     </div>
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="relative z-10 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>

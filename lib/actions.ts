@@ -89,24 +89,36 @@ export async function addManualTransaction(
   }
 }
 
+type CategoryUpdateScope = 'single' | 'merchant';
+
 /**
- * Smart category update: Updates ALL transactions with the same merchant name
- * This allows the app to learn your preferences
- * @param merchant - Merchant name to update
- * @param newCategory - New category to apply to all transactions with this merchant
+ * Category update with configurable scope:
+ * - single: update only one transaction by id
+ * - merchant: update all transactions with the same merchant
  */
 export async function updateTransactionCategory(
   merchant: string,
-  newCategory: string
+  newCategory: string,
+  options?: { scope?: CategoryUpdateScope; transactionId?: string }
 ) {
   try {
     const supabase = createServerClient();
-    
-    const { data, error } = await supabase
-      .from('transactions')
-      .update({ category: newCategory })
-      .eq('merchant', merchant)
-      .select();
+    const scope: CategoryUpdateScope = options?.scope ?? 'merchant';
+
+    let query = supabase.from('transactions').update({ category: newCategory });
+    if (scope === 'single') {
+      if (!options?.transactionId) {
+        return {
+          success: false,
+          error: 'transactionId is required when scope is single',
+        };
+      }
+      query = query.eq('id', options.transactionId);
+    } else {
+      query = query.eq('merchant', merchant);
+    }
+
+    const { data, error } = await query.select();
 
     if (error) {
       return {
@@ -192,6 +204,49 @@ export async function updateInsightToggle(
 }
 
 /**
+ * Updates amount for a single transaction.
+ * @param transactionId - ID of the transaction to update
+ * @param newAmount - New amount value
+ */
+export async function updateTransactionAmount(transactionId: string, newAmount: number) {
+  try {
+    if (!Number.isFinite(newAmount) || newAmount <= 0) {
+      return {
+        success: false,
+        error: 'Amount must be a positive number',
+      };
+    }
+
+    const supabase = createServerClient();
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .update({ amount: newAmount })
+      .eq('id', transactionId)
+      .select()
+      .single();
+
+    if (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+
+    revalidatePath('/');
+    return {
+      success: true,
+      transaction: data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+}
+
+/**
  * Creates or updates a monthly budget for a specific month
  * @param month - Date string in format 'YYYY-MM-DD' (e.g., '2026-02-01')
  * @param amount - Budget amount for that month
@@ -242,23 +297,11 @@ export async function upsertMonthlyBudget(month: string, amount: number) {
 }
 
 /**
- * Seed default categories into the `categories` table if it's empty.
+ * Ensure default categories exist in the `categories` table.
  */
 export async function ensureDefaultCategories() {
   try {
     const supabase = createServerClient();
-
-    const { count, error: countError } = await supabase
-      .from('categories')
-      .select('id', { count: 'exact', head: true });
-
-    if (countError) {
-      return { success: false, error: countError.message };
-    }
-
-    if ((count || 0) > 0) {
-      return { success: true, seeded: false };
-    }
 
     const rows = DEFAULT_CATEGORIES.map((c: CategoryConfig) => ({
       name: c.name,
@@ -266,7 +309,7 @@ export async function ensureDefaultCategories() {
       color_key: c.color_key,
     }));
 
-    const { error } = await supabase.from('categories').insert(rows);
+    const { error } = await supabase.from('categories').upsert(rows, { onConflict: 'name' });
     if (error) {
       return { success: false, error: error.message };
     }

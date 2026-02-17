@@ -286,7 +286,7 @@ export default function DailyTab({ onOpenSettings }: Props) {
                 className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]"
               >
                 {/* Category Icon */}
-                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${categoryColor}`}>
                   {categoryIcon}
                 </div>
 

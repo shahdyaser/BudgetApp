@@ -104,6 +104,8 @@ export const DEFAULT_CATEGORIES: CategoryConfig[] = [
   { name: 'Accommodation', icon_key: 'hotel', color_key: 'cyan' },
   { name: 'Coffee', icon_key: 'coffee', color_key: 'amber' },
   { name: 'Music', icon_key: 'music', color_key: 'violet' },
+  { name: 'Subscriptions', icon_key: 'music', color_key: 'violet' },
+  { name: 'Installments', icon_key: 'receipt', color_key: 'blue' },
   { name: 'Other', icon_key: 'credit_card', color_key: 'gray' },
 ];
 
@@ -112,10 +114,11 @@ export function findCategoryConfig(
   categories?: CategoryConfig[] | null
 ): CategoryConfig | null {
   const list = categories && categories.length > 0 ? categories : DEFAULT_CATEGORIES;
-  const hit = list.find((c) => c.name === categoryName);
+  const normalized = categoryName.trim().toLowerCase();
+  const hit = list.find((c) => c.name.trim().toLowerCase() === normalized);
   if (hit) return hit;
   // Unknown category fallback
-  return list.find((c) => c.name === 'Other') ?? null;
+  return list.find((c) => c.name.trim().toLowerCase() === 'other') ?? null;
 }
 
 export function getCategoryBadgeClass(
@@ -123,8 +126,20 @@ export function getCategoryBadgeClass(
   categories?: CategoryConfig[] | null
 ): string {
   const cfg = findCategoryConfig(categoryName, categories);
-  const colorKey = cfg?.color_key ?? 'gray';
-  return COLOR_OPTIONS[colorKey]?.badgeClass ?? COLOR_OPTIONS.gray.badgeClass;
+  const colorKey = String(cfg?.color_key ?? 'gray').trim().toLowerCase();
+
+  // Backward compatibility: if DB stores full Tailwind classes, infer the color key
+  // and return a static class from COLOR_OPTIONS (safer with Tailwind builds).
+  if (colorKey.includes('bg-') && colorKey.includes('text-')) {
+    const m = colorKey.match(/bg-([a-z]+)-\d+/i);
+    const inferred = m?.[1]?.toLowerCase() as ColorKey | undefined;
+    if (inferred && COLOR_OPTIONS[inferred]) {
+      return COLOR_OPTIONS[inferred].badgeClass;
+    }
+    return COLOR_OPTIONS.gray.badgeClass;
+  }
+
+  return COLOR_OPTIONS[colorKey as ColorKey]?.badgeClass ?? COLOR_OPTIONS.gray.badgeClass;
 }
 
 export function getCategoryChartFill(
@@ -132,8 +147,19 @@ export function getCategoryChartFill(
   categories?: CategoryConfig[] | null
 ): string {
   const cfg = findCategoryConfig(categoryName, categories);
-  const colorKey = cfg?.color_key ?? 'gray';
-  return COLOR_OPTIONS[colorKey]?.chartFillHex ?? COLOR_OPTIONS.gray.chartFillHex;
+  const colorKey = String(cfg?.color_key ?? 'gray').trim().toLowerCase();
+
+  // Backward compatibility: infer key from Tailwind class text if needed.
+  if (colorKey.includes('bg-') && colorKey.includes('text-')) {
+    const m = colorKey.match(/bg-([a-z]+)-\d+/i);
+    const inferred = m?.[1]?.toLowerCase() as ColorKey | undefined;
+    if (inferred && COLOR_OPTIONS[inferred]) {
+      return COLOR_OPTIONS[inferred].chartFillHex;
+    }
+    return COLOR_OPTIONS.gray.chartFillHex;
+  }
+
+  return COLOR_OPTIONS[colorKey as ColorKey]?.chartFillHex ?? COLOR_OPTIONS.gray.chartFillHex;
 }
 
 export function getCategoryIconNode(
