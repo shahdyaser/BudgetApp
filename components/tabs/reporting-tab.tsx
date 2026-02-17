@@ -31,11 +31,7 @@ export default function ReportingTab({ onOpenSettings }: Props) {
   const router = useRouter();
   const { categories, merchantSettings } = useSettings();
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [dateFrom, setDateFrom] = useState<Date | undefined>(() => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - 5); // Default to last 6 months
-    return startOfMonth(date);
-  });
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(() => startOfMonth(new Date(2026, 0, 1)));
   const [dateTo, setDateTo] = useState<Date | undefined>(() => endOfMonth(new Date()));
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
   const [totalSpent, setTotalSpent] = useState(0);
