@@ -21,7 +21,7 @@ type Props = { onOpenSettings: () => void };
 
 export default function DailyTab({ onOpenSettings }: Props) {
   const router = useRouter();
-  const { categories } = useSettings();
+  const { categories, merchantSettings } = useSettings();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cardNumbers, setCardNumbers] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -275,6 +275,7 @@ export default function DailyTab({ onOpenSettings }: Props) {
             const tDate = parseISO(transaction.created_at);
             const categoryIcon = getCategoryIconNode(transaction.category, categories);
             const categoryColor = getCategoryBadgeClass(transaction.category, categories);
+            const merchantImageUrl = merchantSettings[transaction.merchant]?.image_url ?? null;
 
             return (
               <div
@@ -285,10 +286,21 @@ export default function DailyTab({ onOpenSettings }: Props) {
                 }}
                 className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]"
               >
-                {/* Category Icon */}
-                <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${categoryColor}`}>
-                  {categoryIcon}
-                </div>
+                {/* Merchant image if available, otherwise category icon */}
+                {merchantImageUrl ? (
+                  <div className="flex-shrink-0 w-12 h-12 rounded-full overflow-hidden border border-gray-200 bg-white">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={merchantImageUrl}
+                      alt={transaction.merchant}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${categoryColor}`}>
+                    {categoryIcon}
+                  </div>
+                )}
 
                 {/* Transaction Details */}
                 <div className="flex-1 min-w-0">

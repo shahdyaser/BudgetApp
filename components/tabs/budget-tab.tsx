@@ -16,7 +16,7 @@ type Props = { onOpenSettings: () => void };
 
 export default function BudgetTab({ onOpenSettings }: Props) {
   const router = useRouter();
-  const { categories } = useSettings();
+  const { categories, merchantSettings } = useSettings();
   const [selectedMonth, setSelectedMonth] = useState(() => new Date());
   const [budget, setBudget] = useState<number | null>(null);
   const [spent, setSpent] = useState(0);
@@ -474,6 +474,7 @@ export default function BudgetTab({ onOpenSettings }: Props) {
 
                 const icon = groupBy === 'category' ? getCategoryIconNode(name, categories) : null;
                 const color = groupBy === 'category' ? getCategoryBadgeClass(name, categories) : 'bg-purple-100 text-purple-700';
+                const merchantImageUrl = groupBy === 'merchant' ? (merchantSettings[name]?.image_url ?? null) : null;
 
                 return (
                   <div
@@ -494,9 +495,15 @@ export default function BudgetTab({ onOpenSettings }: Props) {
                         {icon}
                       </div>
                     )}
-                    {!icon && (
+                    {!icon && !merchantImageUrl && (
                       <div className={`relative z-10 w-10 h-10 rounded-full ${color} flex items-center justify-center flex-shrink-0`}>
                         <CreditCard className="w-5 h-5" />
+                      </div>
+                    )}
+                    {!icon && merchantImageUrl && (
+                      <div className="relative z-10 w-10 h-10 rounded-full overflow-hidden border border-gray-200 bg-white flex-shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={merchantImageUrl} alt={name} className="w-full h-full object-cover" />
                       </div>
                     )}
                     <div className="relative z-10 flex-1 min-w-0">

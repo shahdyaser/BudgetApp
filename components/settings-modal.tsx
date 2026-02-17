@@ -115,6 +115,14 @@ export default function SettingsModal({ isOpen, onCloseAction }: Props) {
   };
 
   const uploadMerchantImage = async (merchant: string, file: File) => {
+    const fileToDataUrl = (input: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read image file'));
+        reader.readAsDataURL(input);
+      });
+
     const supabase = getSupabaseClient();
     const ext = file.name.split('.').pop() || 'jpg';
     const pathSafe = merchant.replace(/[^a-z0-9]+/gi, '-').slice(0, 60).toLowerCase();
@@ -124,9 +132,16 @@ export default function SettingsModal({ isOpen, onCloseAction }: Props) {
       .from('merchant-images')
       .upload(objectPath, file, { upsert: true, contentType: file.type || 'image/jpeg' });
 
-    if (uploadError) throw new Error(uploadError.message);
+    if (uploadError) {
+      // Fallback for environments where storage bucket/policies are not ready.
+      return await fileToDataUrl(file);
+    }
 
     const { data } = supabase.storage.from('merchant-images').getPublicUrl(objectPath);
+    if (!data?.publicUrl) {
+      return await fileToDataUrl(file);
+    }
+
     return data.publicUrl;
   };
 
@@ -171,6 +186,8 @@ export default function SettingsModal({ isOpen, onCloseAction }: Props) {
         return;
       }
       await reloadSettings();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to upload merchant photo');
     } finally {
       setLoading(false);
     }
