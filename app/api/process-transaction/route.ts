@@ -99,12 +99,24 @@ function parseMerchant(message: string): string | null {
   const arabicAt = message.match(/عند\s+(.+?)\s+في\s+\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/i);
   if (arabicAt?.[1]) return arabicAt[1].trim();
 
-  // - "... من BDC 6TH OF OCTOBER في 21/12/25 ..."
-  // Use the last "من ... في <date>" occurrence to avoid capturing "من بطاقة ..."
-  const arabicFromMatches = Array.from(message.matchAll(/من\s+(.+?)\s+في\s+\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/gi));
-  if (arabicFromMatches.length > 0) {
-    const last = arabicFromMatches[arabicFromMatches.length - 1]?.[1];
-    if (last) return last.trim();
+  // - "... المنتهية بـ **5822 من BDC 6TH OF OCTOBER في 21/12/25 ..."
+  // Prefer merchant right after the card suffix to avoid capturing "من بطاقة ..."
+  const arabicFromAfterCard = message.match(
+    /المنتهي(?:ة)?\s*ب(?:ـ)?\s*\*{0,4}\d{4}\s+من\s+(.+?)\s+في\s+\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/i
+  );
+  if (arabicFromAfterCard?.[1]) return arabicFromAfterCard[1].trim();
+
+  // - Generic fallback: "... من <merchant> في <date> ..."
+  const arabicFrom = message.match(/من\s+(.+?)\s+في\s+\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/i);
+  if (arabicFrom?.[1]) {
+    const captured = arabicFrom[1].trim();
+    // If capture still contains card text, keep only the final merchant segment.
+    if (/بطاقة|المنتهي(?:ة)?\s*ب/i.test(captured) && /\s+من\s+/i.test(captured)) {
+      const segments = captured.split(/\s+من\s+/i).map((s) => s.trim()).filter(Boolean);
+      const lastSegment = segments[segments.length - 1];
+      if (lastSegment) return lastSegment;
+    }
+    return captured;
   }
 
   return null;
@@ -124,6 +136,70 @@ function parseCardLast4(message: string): string | null {
   if (endingCard?.[1]) return endingCard[1];
 
   return null;
+}
+
+function getCairoOffsetMinutes(atUtc: Date): number {
+  try {
+    const offsetPart = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Cairo',
+      timeZoneName: 'shortOffset',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+      .formatToParts(atUtc)
+      .find((p) => p.type === 'timeZoneName')?.value;
+
+    if (!offsetPart) return 120;
+    const match = offsetPart.match(/GMT([+\-])(\d{1,2})(?::?(\d{2}))?/i);
+    if (!match) return 120;
+
+    const sign = match[1] === '-' ? -1 : 1;
+    const hours = Number(match[2]);
+    const minutes = Number(match[3] ?? '0');
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 120;
+    return sign * (hours * 60 + minutes);
+  } catch {
+    // Fallback to Egypt winter offset if Intl offset extraction is unavailable.
+    return 120;
+  }
+}
+
+function parseMessageTimestamp(message: string): string | null {
+  // Supports:
+  // - "... on 21/12/25 14:03 ..."
+  // - "... في 21/12/25 14:03 ..."
+  const match = message.match(
+    /(?:\bon\b|في)\s+(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+|T)(\d{1,2}):(\d{2})/i
+  );
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const rawYear = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const year = rawYear < 100 ? 2000 + rawYear : rawYear;
+
+  if (
+    !Number.isFinite(day) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(year) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return null;
+  }
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+
+  // Bank SMS time is local Egypt time. Convert it to UTC ISO for timestamptz.
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+  const cairoOffsetMinutes = getCairoOffsetMinutes(utcGuess);
+  const utcMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0) - cairoOffsetMinutes * 60 * 1000;
+  const iso = new Date(utcMs).toISOString();
+
+  return Number.isNaN(new Date(iso).getTime()) ? null : iso;
 }
 
 function normalizeCurrency(value: unknown): SupportedCurrency | null {
@@ -277,6 +353,7 @@ async function handleMessage(message: string) {
   const parsedCardLast4 = parseCardLast4(message);
   const charged = parseChargedAmount(message);
   const regexMerchant = parseMerchant(message);
+  const parsedMessageTimestamp = parseMessageTimestamp(message);
   const transferDetectedByText = isLikelyTransferMessage(message);
 
   // Avoid unnecessary AI latency for clear transfer messages that already have amount/currency.
@@ -351,6 +428,7 @@ async function handleMessage(message: string) {
   const { data: transaction, error: insertError } = await supabase
     .from('transactions')
     .insert({
+      ...(parsedMessageTimestamp ? { created_at: parsedMessageTimestamp } : {}),
       card_last4: cardNumber || null,
       amount: amountEgp,
       merchant: merchantName,
