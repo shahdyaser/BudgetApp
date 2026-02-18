@@ -57,7 +57,7 @@ export function formatTransactionNotificationBody(input: {
   const merchant = input.merchant?.trim() ? input.merchant.trim() : 'Unknown Merchant';
   const category = input.category?.trim() ? input.category.trim() : 'Other';
 
-  return `card #${cardLast4} spent ${formattedAmount} EGP to ${merchant} under ${category}`;
+  return `card ${cardLast4} spent ${formattedAmount} EGP to ${merchant} under ${category}`;
 }
 
 export async function sendWebPushToAllDevices(payload: PushPayload): Promise<void> {
