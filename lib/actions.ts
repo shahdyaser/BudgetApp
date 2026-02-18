@@ -312,12 +312,29 @@ export async function upsertMonthlyBudget(month: string, amount: number) {
 export async function ensureDefaultCategories() {
   try {
     const supabase = createServerClient();
+    const removedCategoryNames = ['Accommodation', 'Music'];
 
     const rows = DEFAULT_CATEGORIES.map((c: CategoryConfig) => ({
       name: c.name,
       icon_key: c.icon_key,
       color_key: c.color_key,
     }));
+
+    // Cleanup deprecated categories and remap existing references.
+    await supabase
+      .from('transactions')
+      .update({ category: 'Other' })
+      .in('category', removedCategoryNames);
+
+    await supabase
+      .from('merchant_settings')
+      .update({ category_name: 'Other', updated_at: new Date().toISOString() })
+      .in('category_name', removedCategoryNames);
+
+    await supabase
+      .from('categories')
+      .delete()
+      .in('name', removedCategoryNames);
 
     // Seed only missing category names and never overwrite existing customizations.
     const { error } = await supabase
