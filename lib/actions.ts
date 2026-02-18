@@ -319,7 +319,10 @@ export async function ensureDefaultCategories() {
       color_key: c.color_key,
     }));
 
-    const { error } = await supabase.from('categories').upsert(rows, { onConflict: 'name' });
+    // Seed only missing category names and never overwrite existing customizations.
+    const { error } = await supabase
+      .from('categories')
+      .upsert(rows, { onConflict: 'name', ignoreDuplicates: true });
     if (error) {
       return { success: false, error: error.message };
     }

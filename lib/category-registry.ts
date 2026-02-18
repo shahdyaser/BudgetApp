@@ -104,7 +104,7 @@ export const DEFAULT_CATEGORIES: CategoryConfig[] = [
   { name: 'Accommodation', icon_key: 'hotel', color_key: 'cyan' },
   { name: 'Coffee', icon_key: 'coffee', color_key: 'amber' },
   { name: 'Music', icon_key: 'music', color_key: 'violet' },
-  { name: 'Subscriptions', icon_key: 'music', color_key: 'violet' },
+  { name: 'Subscriptions', icon_key: 'receipt', color_key: 'violet' },
   { name: 'Installments', icon_key: 'receipt', color_key: 'blue' },
   { name: 'Other', icon_key: 'credit_card', color_key: 'gray' },
 ];
