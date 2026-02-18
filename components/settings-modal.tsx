@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { X, Settings as SettingsIcon, Upload } from 'lucide-react';
+import { X, Settings as SettingsIcon, Upload, Bell } from 'lucide-react';
 import { getSupabaseClient } from '@/lib/supabase';
 import { ensureDefaultCategories, renameCategory, upsertCategory, upsertMerchantSetting, updateTransactionCategory } from '@/lib/actions';
 import { getMerchantDefaultCategories, getUniqueMerchants } from '@/lib/data';
@@ -21,6 +21,7 @@ export default function SettingsModal({ isOpen, onCloseAction }: Props) {
   const [merchantDefaults, setMerchantDefaults] = useState<Record<string, string>>({});
   const [merchantQuery, setMerchantQuery] = useState('');
   const [categoryQuery, setCategoryQuery] = useState('');
+  const [notificationStatus, setNotificationStatus] = useState<'idle' | 'enabled' | 'unsupported'>('idle');
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState<IconKey>('credit_card');
@@ -43,6 +44,27 @@ export default function SettingsModal({ isOpen, onCloseAction }: Props) {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const supported =
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      'serviceWorker' in navigator &&
+      'PushManager' in window;
+
+    if (!supported) {
+      setNotificationStatus('unsupported');
+      return;
+    }
+
+    if (Notification.permission === 'granted') {
+      setNotificationStatus('enabled');
+    } else {
+      setNotificationStatus('idle');
+    }
   }, [isOpen]);
 
   const sortedCategories = useMemo(() => {
@@ -193,6 +215,75 @@ export default function SettingsModal({ isOpen, onCloseAction }: Props) {
     }
   };
 
+  const urlBase64ToUint8Array = (base64String: string) => {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  const handleEnableNotifications = async () => {
+    const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapidPublicKey) {
+      alert('Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY in environment.');
+      return;
+    }
+
+    const supported =
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      'serviceWorker' in navigator &&
+      'PushManager' in window;
+
+    if (!supported) {
+      setNotificationStatus('unsupported');
+      alert('Push notifications are not supported on this browser/device.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        alert('Notification permission was not granted.');
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      const currentSub = await registration.pushManager.getSubscription();
+      const subscription =
+        currentSub ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        }));
+
+      const res = await fetch('/api/push-subscriptions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(subscription.toJSON()),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || 'Failed to save push subscription');
+      }
+
+      setNotificationStatus('enabled');
+      alert('Notifications are enabled. You will receive a push for each transaction.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to enable notifications');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
@@ -211,6 +302,32 @@ export default function SettingsModal({ isOpen, onCloseAction }: Props) {
           {loading && (
             <div className="text-sm text-gray-500">Saving…</div>
           )}
+
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-purple-600" />
+                  iOS Push Notifications
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {notificationStatus === 'enabled'
+                    ? 'Enabled for this device.'
+                    : notificationStatus === 'unsupported'
+                      ? 'Not supported on this device/browser.'
+                      : 'Enable to receive a push for each transaction.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleEnableNotifications}
+                disabled={loading || notificationStatus === 'enabled' || notificationStatus === 'unsupported'}
+                className="px-3 py-2 rounded-xl bg-purple-600 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                {notificationStatus === 'enabled' ? 'Enabled' : 'Enable'}
+              </button>
+            </div>
+          </div>
 
           {/* Tabs */}
           <div className="bg-white rounded-2xl p-1 shadow-sm border border-gray-100">

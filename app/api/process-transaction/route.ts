@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/lib/supabase';
+import { formatTransactionNotificationBody, sendWebPushToAllDevices } from '@/lib/push-notifications';
 
 type SupportedCurrency = 'EGP' | 'USD' | 'EUR';
 const OPENROUTER_MODEL = 'qwen/qwen3-235b-a22b-thinking-2507';
@@ -431,6 +432,23 @@ async function handleMessage(message: string) {
       { status: 500 }
     );
   }
+
+  const notificationBody = formatTransactionNotificationBody({
+    cardLast4: cardNumber || null,
+    amountEgp,
+    merchant: merchantName,
+    category,
+  });
+
+  await sendWebPushToAllDevices({
+    title: 'New transaction',
+    body: notificationBody,
+    icon: '/app-icon.png',
+    badge: '/app-icon.png',
+    data: {
+      transactionId: transaction.id,
+    },
+  });
 
   return NextResponse.json({
     success: true,

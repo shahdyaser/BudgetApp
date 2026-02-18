@@ -100,3 +100,49 @@ on storage.objects
 for delete
 to public
 using (bucket_id = 'merchant-images');
+
+-- ---------------------------------------------------------------------------
+-- push_subscriptions: web push subscriptions per device
+-- ---------------------------------------------------------------------------
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  user_agent text null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_push_subscriptions_created_at on public.push_subscriptions(created_at);
+
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists "push_subscriptions_public_select" on public.push_subscriptions;
+create policy "push_subscriptions_public_select"
+on public.push_subscriptions
+for select
+to public
+using (true);
+
+drop policy if exists "push_subscriptions_public_insert" on public.push_subscriptions;
+create policy "push_subscriptions_public_insert"
+on public.push_subscriptions
+for insert
+to public
+with check (true);
+
+drop policy if exists "push_subscriptions_public_update" on public.push_subscriptions;
+create policy "push_subscriptions_public_update"
+on public.push_subscriptions
+for update
+to public
+using (true)
+with check (true);
+
+drop policy if exists "push_subscriptions_public_delete" on public.push_subscriptions;
+create policy "push_subscriptions_public_delete"
+on public.push_subscriptions
+for delete
+to public
+using (true);

@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Finance App",
   description: "Track your spending and manage your budget",
   viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: '/app-icon.png',
     apple: '/app-icon.png',
