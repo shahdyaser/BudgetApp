@@ -12,7 +12,7 @@ import { SettingsProvider } from '@/components/settings-context';
 type TabType = 'daily' | 'budget' | 'reporting' | 'list';
 
 export default function MobileApp() {
-  const [activeTab, setActiveTab] = useState<TabType>('daily');
+  const [activeTab, setActiveTab] = useState<TabType>('budget');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   return (

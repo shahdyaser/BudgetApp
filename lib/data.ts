@@ -129,6 +129,10 @@ function toLocalWallTimeIso(value: string): string {
     .replace(/(?:Z|[+\-]\d{2}:?\d{2})$/i, '');
 }
 
+function toDateKeyLocal(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * Fetch all transactions from Supabase
  */
@@ -371,25 +375,19 @@ export async function getDailySpending(
   });
 
   // Convert to array and calculate cumulative totals.
-  // Stop at the last day that has at least one transaction in this month.
-  const transactionDays = Array.from(dailyMap.keys())
-    .map((dateKey) => {
-      const d = new Date(`${dateKey}T00:00:00`);
-      return d.getFullYear() === year && d.getMonth() === month ? d.getDate() : null;
-    })
-    .filter((day): day is number => day !== null);
-
-  if (transactionDays.length === 0) {
-    return [];
-  }
-
-  const lastDayToRender = Math.max(...transactionDays);
+  // Show day 1 -> today's date for current month, otherwise full month.
+  const now = new Date();
+  const isCurrentMonth = now.getFullYear() === year && now.getMonth() === month;
+  const isFutureMonth =
+    year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth());
+  if (isFutureMonth) return [];
+  const lastDayToRender = isCurrentMonth ? now.getDate() : new Date(year, month + 1, 0).getDate();
   const result: DailySpending[] = [];
   let cumulative = 0;
 
   for (let day = 1; day <= lastDayToRender; day++) {
     const date = new Date(year, month, day);
-    const dateString = date.toISOString().split('T')[0];
+    const dateString = toDateKeyLocal(date);
     const dayTotal = dailyMap.get(dateString) || 0;
     cumulative += dayTotal;
     result.push({
