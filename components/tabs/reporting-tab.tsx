@@ -260,11 +260,11 @@ export default function ReportingTab({ onOpenSettings }: Props) {
 
       {/* Date Range Selector */}
       <div className="px-4 py-4">
-        <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Date Range</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="min-w-0 overflow-hidden bg-gray-50 border border-gray-200 rounded-xl p-2">
-              <label className="text-[11px] text-gray-500 mb-1 block">From</label>
+        <div className="bg-white rounded-2xl p-3 shadow-sm">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Date Range</h3>
+          <div className="grid grid-cols-2 gap-2 max-w-[280px] mx-auto">
+            <div className="min-w-0 max-w-[136px] overflow-hidden bg-gray-50 border border-gray-200 rounded-xl p-1.5">
+              <label className="text-[10px] text-gray-500 mb-0.5 block">From</label>
               <input
                 type="month"
                 value={dateFrom ? format(dateFrom, 'yyyy-MM') : ''}
@@ -275,11 +275,11 @@ export default function ReportingTab({ onOpenSettings }: Props) {
                   }
                 }}
                 aria-label="From month"
-                className="w-full max-w-full min-w-0 px-2 py-1.5 border border-gray-300 rounded-lg text-[11px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full max-w-full min-w-0 h-8 px-2 py-1 border border-gray-300 rounded-lg text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
-            <div className="min-w-0 overflow-hidden bg-gray-50 border border-gray-200 rounded-xl p-2">
-              <label className="text-[11px] text-gray-500 mb-1 block">To</label>
+            <div className="min-w-0 max-w-[136px] overflow-hidden bg-gray-50 border border-gray-200 rounded-xl p-1.5">
+              <label className="text-[10px] text-gray-500 mb-0.5 block">To</label>
               <input
                 type="month"
                 value={dateTo ? format(dateTo, 'yyyy-MM') : ''}
@@ -290,7 +290,7 @@ export default function ReportingTab({ onOpenSettings }: Props) {
                   }
                 }}
                 aria-label="To month"
-                className="w-full max-w-full min-w-0 px-2 py-1.5 border border-gray-300 rounded-lg text-[11px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full max-w-full min-w-0 h-8 px-2 py-1 border border-gray-300 rounded-lg text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
           </div>

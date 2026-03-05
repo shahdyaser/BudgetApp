@@ -404,11 +404,8 @@ async function handleMessage(message: string) {
     }
   }
 
-  // Auto-filter: Check if merchant contains 'Transfer' or 'ATM'
-  const includeInInsights =
-    !merchantName.toLowerCase().includes('transfer') &&
-    !merchantName.toLowerCase().includes('atm') &&
-    category !== 'Transfers';
+  // Default behavior: all new transactions are included until user changes it manually.
+  const includeInInsights = true;
 
   // Save to Supabase
   const { data: transaction, error: insertError } = await supabase

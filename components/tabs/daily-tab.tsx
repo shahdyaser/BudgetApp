@@ -120,8 +120,14 @@ export default function DailyTab({ onOpenSettings }: Props) {
     return matchesDate && matchesCard;
   });
 
-  // Daily total includes all transactions (even excluded from insights/budget)
-  const todayTotal = filteredTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
+  // Show separate totals to distinguish budget-included vs excluded transactions.
+  const includedTotal = filteredTransactions
+    .filter((t) => t.include_in_insights)
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+  const excludedTotal = filteredTransactions
+    .filter((t) => !t.include_in_insights)
+    .reduce((sum, t) => sum + Number(t.amount), 0);
+  const todayTotal = includedTotal + excludedTotal;
 
   const scrollToSelectedDay = () => {
     if (scrollRef.current && daysData.length > 0) {
@@ -348,13 +354,21 @@ export default function DailyTab({ onOpenSettings }: Props) {
       </div>
 
       {/* Today's Total and Add Button */}
-      <div className="fixed bottom-20 left-0 right-0 px-4 py-4 bg-white/80 backdrop-blur-lg border-t border-purple-200/50">
-        <div className="max-w-md mx-auto flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-600">Today's Total</p>
-            <p className="text-2xl font-bold text-purple-600">
+      <div className="fixed bottom-20 left-0 right-0 px-4 py-2 bg-white/80 backdrop-blur-lg border-t border-purple-200/50">
+        <div className="max-w-md mx-auto flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs text-gray-600">Today</p>
+            <p className="text-xl font-bold text-purple-600 leading-tight">
               {todayTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}
             </p>
+            <div className="mt-1 flex items-center gap-3 flex-wrap">
+              <p className="text-xs text-green-700 whitespace-nowrap">
+                Included: {includedTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+              </p>
+              <p className="text-xs text-gray-500 whitespace-nowrap">
+                Not included: {excludedTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+              </p>
+            </div>
           </div>
           <button 
             onClick={() => setIsAddModalOpen(true)}

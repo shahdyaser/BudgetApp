@@ -363,17 +363,31 @@ export async function getDailySpending(
   const dailyMap = new Map<string, number>();
   
   data?.forEach(transaction => {
-    const date = new Date(transaction.created_at).toISOString().split('T')[0];
+    const date = typeof transaction.created_at === 'string'
+      ? toLocalWallTimeIso(transaction.created_at).split('T')[0]
+      : new Date(transaction.created_at).toISOString().split('T')[0];
     const current = dailyMap.get(date) || 0;
     dailyMap.set(date, current + Number(transaction.amount));
   });
 
-  // Convert to array and calculate cumulative totals
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  // Convert to array and calculate cumulative totals.
+  // Stop at the last day that has at least one transaction in this month.
+  const transactionDays = Array.from(dailyMap.keys())
+    .map((dateKey) => {
+      const d = new Date(`${dateKey}T00:00:00`);
+      return d.getFullYear() === year && d.getMonth() === month ? d.getDate() : null;
+    })
+    .filter((day): day is number => day !== null);
+
+  if (transactionDays.length === 0) {
+    return [];
+  }
+
+  const lastDayToRender = Math.max(...transactionDays);
   const result: DailySpending[] = [];
   let cumulative = 0;
 
-  for (let day = 1; day <= daysInMonth; day++) {
+  for (let day = 1; day <= lastDayToRender; day++) {
     const date = new Date(year, month, day);
     const dateString = date.toISOString().split('T')[0];
     const dayTotal = dailyMap.get(dateString) || 0;
