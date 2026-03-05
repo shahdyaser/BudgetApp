@@ -153,6 +153,9 @@ export default function TransactionEditModal({
             type="number"
             min="0"
             step="0.01"
+            inputMode="decimal"
+            pattern="[0-9]*[.,]?[0-9]*"
+            enterKeyHint="done"
             value={amountInput}
             onChange={(e) => setAmountInput(e.target.value)}
             className="w-full px-3 py-3 rounded-xl border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4"

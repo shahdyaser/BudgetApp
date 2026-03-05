@@ -234,29 +234,32 @@ export default function BudgetTab({ onOpenSettings }: Props) {
           {isEditingBudget ? (
             <div className="space-y-3">
               <label className="text-sm font-medium text-gray-700">Monthly Budget</label>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <input
                   type="number"
                   step="0.01"
                   min="0"
+                  inputMode="decimal"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  enterKeyHint="done"
                   value={budgetInput}
                   onChange={(e) => setBudgetInput(e.target.value)}
                   placeholder="Enter budget amount"
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
                 <button
                   onClick={handleSaveBudget}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors"
-                aria-label="Save budget"
-                title="Save budget"
+                  className="w-10 h-10 shrink-0 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors inline-flex items-center justify-center"
+                  aria-label="Save budget"
+                  title="Save budget"
                 >
                   <Save className="w-5 h-5" />
                 </button>
                 <button
                   onClick={handleCancelEdit}
-                  className="px-4 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
-                aria-label="Cancel editing budget"
-                title="Cancel"
+                  className="w-10 h-10 shrink-0 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors inline-flex items-center justify-center"
+                  aria-label="Cancel editing budget"
+                  title="Cancel"
                 >
                   <X className="w-5 h-5" />
                 </button>
