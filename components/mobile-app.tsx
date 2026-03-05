@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import Image from 'next/image';
+import { useEffect, useState } from 'react';
 import DailyTab from '@/components/tabs/daily-tab';
 import BudgetTab from '@/components/tabs/budget-tab';
 import ReportingTab from '@/components/tabs/reporting-tab';
@@ -14,10 +15,47 @@ type TabType = 'daily' | 'budget' | 'reporting' | 'list';
 export default function MobileApp() {
   const [activeTab, setActiveTab] = useState<TabType>('budget');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [isSplashFading, setIsSplashFading] = useState(false);
+
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => {
+      setIsSplashFading(true);
+    }, 1900);
+    const hideTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2200);
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(hideTimer);
+    };
+  }, []);
 
   return (
     <SettingsProvider>
       <div className="min-h-screen bg-gradient-to-b from-purple-50 via-purple-100 to-white flex flex-col">
+        {showSplash && (
+          <div
+            className={`fixed inset-0 z-50 bg-gradient-to-br from-purple-700 via-purple-600 to-violet-600 flex items-center justify-center transition-opacity duration-300 ${
+              isSplashFading ? 'opacity-0' : 'opacity-100'
+            }`}
+          >
+            <div className="flex flex-col items-center text-white animate-pulse">
+              <div className="w-28 h-28 rounded-3xl shadow-2xl overflow-hidden ring-2 ring-white/20">
+                <Image
+                  src="/app-icon.png"
+                  alt="Budget App logo"
+                  width={112}
+                  height={112}
+                  priority
+                />
+              </div>
+              <h1 className="mt-5 text-2xl font-bold tracking-wide">Budget App</h1>
+              <p className="mt-1 text-sm text-white/80">Track. Budget. Grow.</p>
+            </div>
+          </div>
+        )}
+
         {/* Status Bar Simulation */}
         <div className="h-6 bg-transparent" />
 
