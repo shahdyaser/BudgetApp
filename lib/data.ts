@@ -11,6 +11,19 @@ export interface Transaction {
   raw_text: string | null;
 }
 
+export type TransactionPageFilters = {
+  fromDate?: string;
+  toDate?: string;
+  category?: string;
+  merchant?: string;
+  cardLast4?: string | null;
+};
+
+export interface TransactionsPageResult {
+  transactions: Transaction[];
+  hasMore: boolean;
+}
+
 export interface MonthlyBudget {
   id: string;
   month: string;
@@ -153,6 +166,60 @@ export async function getTransactions(): Promise<Transaction[]> {
     ...t,
     created_at: typeof t.created_at === 'string' ? toLocalWallTimeIso(t.created_at) : t.created_at,
   }));
+}
+
+/**
+ * Fetch transactions page by page with optional filters.
+ */
+export async function getTransactionsPage(
+  page: number,
+  pageSize: number,
+  filters?: TransactionPageFilters
+): Promise<TransactionsPageResult> {
+  const supabase = createServerClient();
+  const safePage = Math.max(0, page);
+  const safePageSize = Math.max(1, pageSize);
+  const offset = safePage * safePageSize;
+
+  let query = supabase
+    .from('transactions')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (filters?.fromDate) {
+    query = query.gte('created_at', `${filters.fromDate}T00:00:00`);
+  }
+  if (filters?.toDate) {
+    query = query.lte('created_at', `${filters.toDate}T23:59:59.999`);
+  }
+  if (filters?.category) {
+    query = query.eq('category', filters.category);
+  }
+  if (filters?.merchant) {
+    query = query.eq('merchant', filters.merchant);
+  }
+  if (filters?.cardLast4 === null) {
+    query = query.is('card_last4', null);
+  } else if (filters?.cardLast4) {
+    query = query.eq('card_last4', filters.cardLast4);
+  }
+
+  // Ask for one extra row to detect whether there is a next page.
+  const { data, error } = await query.range(offset, offset + safePageSize);
+  if (error) {
+    console.error('Error fetching transactions page:', error);
+    return { transactions: [], hasMore: false };
+  }
+
+  const mapped = (data || []).map((t: any) => ({
+    ...t,
+    created_at: typeof t.created_at === 'string' ? toLocalWallTimeIso(t.created_at) : t.created_at,
+  }));
+
+  return {
+    transactions: mapped.slice(0, safePageSize),
+    hasMore: mapped.length > safePageSize,
+  };
 }
 
 /**
