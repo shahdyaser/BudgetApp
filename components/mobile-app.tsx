@@ -4,11 +4,12 @@ import { useState } from 'react';
 import DailyTab from '@/components/tabs/daily-tab';
 import BudgetTab from '@/components/tabs/budget-tab';
 import ReportingTab from '@/components/tabs/reporting-tab';
-import { Home, Wallet, BarChart3 } from 'lucide-react';
+import ListTab from '@/components/tabs/list-tab';
+import { Home, Wallet, BarChart3, List } from 'lucide-react';
 import SettingsModal from '@/components/settings-modal';
 import { SettingsProvider } from '@/components/settings-context';
 
-type TabType = 'daily' | 'budget' | 'reporting';
+type TabType = 'daily' | 'budget' | 'reporting' | 'list';
 
 export default function MobileApp() {
   const [activeTab, setActiveTab] = useState<TabType>('daily');
@@ -25,6 +26,7 @@ export default function MobileApp() {
           {activeTab === 'daily' && <DailyTab onOpenSettings={() => setIsSettingsOpen(true)} />}
           {activeTab === 'budget' && <BudgetTab onOpenSettings={() => setIsSettingsOpen(true)} />}
           {activeTab === 'reporting' && <ReportingTab onOpenSettings={() => setIsSettingsOpen(true)} />}
+          {activeTab === 'list' && <ListTab onOpenSettings={() => setIsSettingsOpen(true)} />}
         </div>
 
         <SettingsModal isOpen={isSettingsOpen} onCloseAction={() => setIsSettingsOpen(false)} />
@@ -74,6 +76,21 @@ export default function MobileApp() {
               <BarChart3 className={`h-6 w-6 mb-1 ${activeTab === 'reporting' ? 'text-purple-600' : 'text-gray-400'}`} />
               <span className={`text-xs font-medium ${activeTab === 'reporting' ? 'text-purple-600' : 'text-gray-400'}`}>
                 Reporting
+              </span>
+            </button>
+
+            {/* List Tab */}
+            <button
+              onClick={() => setActiveTab('list')}
+              className={`flex flex-col items-center justify-center flex-1 h-full transition-all ${
+                activeTab === 'list'
+                  ? 'text-purple-600'
+                  : 'text-gray-400'
+              }`}
+            >
+              <List className={`h-6 w-6 mb-1 ${activeTab === 'list' ? 'text-purple-600' : 'text-gray-400'}`} />
+              <span className={`text-xs font-medium ${activeTab === 'list' ? 'text-purple-600' : 'text-gray-400'}`}>
+                List
               </span>
             </button>
           </div>

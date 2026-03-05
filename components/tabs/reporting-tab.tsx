@@ -26,6 +26,20 @@ type DeltaRow = {
 };
 
 type Props = { onOpenSettings: () => void };
+const MONTH_OPTIONS = [
+  { value: 0, label: 'Jan' },
+  { value: 1, label: 'Feb' },
+  { value: 2, label: 'Mar' },
+  { value: 3, label: 'Apr' },
+  { value: 4, label: 'May' },
+  { value: 5, label: 'Jun' },
+  { value: 6, label: 'Jul' },
+  { value: 7, label: 'Aug' },
+  { value: 8, label: 'Sep' },
+  { value: 9, label: 'Oct' },
+  { value: 10, label: 'Nov' },
+  { value: 11, label: 'Dec' },
+];
 
 export default function ReportingTab({ onOpenSettings }: Props) {
   const router = useRouter();
@@ -46,6 +60,8 @@ export default function ReportingTab({ onOpenSettings }: Props) {
   const [monthsInRange, setMonthsInRange] = useState<Date[]>([]);
   const [selectedDeltaCategory, setSelectedDeltaCategory] = useState<string>('');
   const [selectedDeltaMerchant, setSelectedDeltaMerchant] = useState<string>('__ALL__');
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 8 }, (_, i) => currentYear - 3 + i);
 
   useEffect(() => {
     if (dateFrom && dateTo) {
@@ -245,6 +261,21 @@ export default function ReportingTab({ onOpenSettings }: Props) {
   };
 
   const deltaRows = buildDeltaRows();
+  const updateFromDate = (year: number, monthIndex: number) => {
+    const nextFrom = startOfMonth(new Date(year, monthIndex, 1));
+    setDateFrom(nextFrom);
+    if (dateTo && nextFrom > dateTo) {
+      setDateTo(endOfMonth(nextFrom));
+    }
+  };
+
+  const updateToDate = (year: number, monthIndex: number) => {
+    const nextTo = endOfMonth(new Date(year, monthIndex, 1));
+    setDateTo(nextTo);
+    if (dateFrom && nextTo < dateFrom) {
+      setDateFrom(startOfMonth(nextTo));
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-50 via-purple-100 to-white pb-24">
@@ -262,36 +293,56 @@ export default function ReportingTab({ onOpenSettings }: Props) {
       <div className="px-4 py-4">
         <div className="bg-white rounded-2xl p-3 shadow-sm">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Date Range</h3>
-          <div className="grid grid-cols-2 gap-2 max-w-[280px] mx-auto">
-            <div className="min-w-0 max-w-[136px] overflow-hidden bg-gray-50 border border-gray-200 rounded-xl p-1.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="min-w-0 overflow-hidden bg-gray-50 border border-gray-200 rounded-xl p-1.5">
               <label className="text-[10px] text-gray-500 mb-0.5 block">From</label>
-              <input
-                type="month"
-                value={dateFrom ? format(dateFrom, 'yyyy-MM') : ''}
-                onChange={(e) => {
-                  if (e.target.value) {
-                    const [year, month] = e.target.value.split('-');
-                    setDateFrom(startOfMonth(new Date(parseInt(year), parseInt(month) - 1)));
-                  }
-                }}
-                aria-label="From month"
-                className="w-full max-w-full min-w-0 h-8 px-2 py-1 border border-gray-300 rounded-lg text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
+              <div className="grid grid-cols-2 gap-1">
+                <select
+                  value={dateFrom ? dateFrom.getMonth() : 0}
+                  onChange={(e) => updateFromDate(dateFrom ? dateFrom.getFullYear() : currentYear, Number(e.target.value))}
+                  aria-label="From month"
+                  className="w-full h-8 px-2 py-1 border border-gray-300 rounded-lg text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {MONTH_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+                <select
+                  value={dateFrom ? dateFrom.getFullYear() : currentYear}
+                  onChange={(e) => updateFromDate(Number(e.target.value), dateFrom ? dateFrom.getMonth() : 0)}
+                  aria-label="From year"
+                  className="w-full h-8 px-2 py-1 border border-gray-300 rounded-lg text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {yearOptions.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="min-w-0 max-w-[136px] overflow-hidden bg-gray-50 border border-gray-200 rounded-xl p-1.5">
+            <div className="min-w-0 overflow-hidden bg-gray-50 border border-gray-200 rounded-xl p-1.5">
               <label className="text-[10px] text-gray-500 mb-0.5 block">To</label>
-              <input
-                type="month"
-                value={dateTo ? format(dateTo, 'yyyy-MM') : ''}
-                onChange={(e) => {
-                  if (e.target.value) {
-                    const [year, month] = e.target.value.split('-');
-                    setDateTo(endOfMonth(new Date(parseInt(year), parseInt(month) - 1)));
-                  }
-                }}
-                aria-label="To month"
-                className="w-full max-w-full min-w-0 h-8 px-2 py-1 border border-gray-300 rounded-lg text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
+              <div className="grid grid-cols-2 gap-1">
+                <select
+                  value={dateTo ? dateTo.getMonth() : 0}
+                  onChange={(e) => updateToDate(dateTo ? dateTo.getFullYear() : currentYear, Number(e.target.value))}
+                  aria-label="To month"
+                  className="w-full h-8 px-2 py-1 border border-gray-300 rounded-lg text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {MONTH_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+                <select
+                  value={dateTo ? dateTo.getFullYear() : currentYear}
+                  onChange={(e) => updateToDate(Number(e.target.value), dateTo ? dateTo.getMonth() : 0)}
+                  aria-label="To year"
+                  className="w-full h-8 px-2 py-1 border border-gray-300 rounded-lg text-[10px] bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {yearOptions.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </div>
