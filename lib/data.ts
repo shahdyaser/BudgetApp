@@ -32,6 +32,94 @@ export interface MerchantSettingRow {
   updated_at: string;
 }
 
+function toMonthStartKey(year: number, monthIndex: number): string {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+}
+
+function toMonthEndKey(year: number, monthIndex: number): string {
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+}
+
+async function getBudgetRowByExactMonth(monthKey: string): Promise<MonthlyBudget | null> {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from('monthly_budgets')
+    .select('*')
+    .eq('month', monthKey)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    console.error('Error fetching budget by exact month:', error);
+    return null;
+  }
+
+  return data as MonthlyBudget;
+}
+
+async function getLegacyBudgetRowWithinMonth(year: number, monthIndex: number): Promise<MonthlyBudget | null> {
+  const supabase = createServerClient();
+  const monthStartKey = toMonthStartKey(year, monthIndex);
+  const monthEndKey = toMonthEndKey(year, monthIndex);
+
+  const { data, error } = await supabase
+    .from('monthly_budgets')
+    .select('*')
+    .gte('month', monthStartKey)
+    .lte('month', monthEndKey)
+    .order('month', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching legacy month budget row:', error);
+    return null;
+  }
+
+  return (data as MonthlyBudget | null) ?? null;
+}
+
+async function createBudgetFromLatestPreviousMonth(monthKey: string): Promise<MonthlyBudget | null> {
+  const supabase = createServerClient();
+
+  const { data: previous, error: previousError } = await supabase
+    .from('monthly_budgets')
+    .select('amount')
+    .lt('month', monthKey)
+    .order('month', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (previousError) {
+    console.error('Error fetching previous month budget:', previousError);
+    return null;
+  }
+
+  if (!previous?.amount) return null;
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('monthly_budgets')
+    .upsert(
+      {
+        month: monthKey,
+        amount: previous.amount,
+      },
+      {
+        onConflict: 'month',
+      }
+    )
+    .select('*')
+    .single();
+
+  if (insertError) {
+    console.error('Error creating carried-over budget:', insertError);
+    return null;
+  }
+
+  return inserted as MonthlyBudget;
+}
+
 function toLocalWallTimeIso(value: string): string {
   // Keep date/time as entered (wall-clock) and strip timezone suffix to avoid UI shifts.
   // Example: "2026-01-25T22:24:00+02:00" -> "2026-01-25T22:24:00"
@@ -161,30 +249,25 @@ export async function getMerchantDefaultCategories(): Promise<Record<string, str
  * Get current month's budget
  */
 export async function getCurrentMonthBudget(): Promise<MonthlyBudget | null> {
-  const supabase = createServerClient();
-  
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
-  const firstDayOfMonth = new Date(year, month, 1);
-  const monthString = firstDayOfMonth.toISOString().split('T')[0];
+  const monthString = toMonthStartKey(year, month);
+  const isFirstDayOfMonth = now.getDate() === 1;
 
-  const { data, error } = await supabase
-    .from('monthly_budgets')
-    .select('*')
-    .eq('month', monthString)
-    .single();
+  const exact = await getBudgetRowByExactMonth(monthString);
+  if (exact) return exact;
 
-  if (error) {
-    if (error.code === 'PGRST116') {
-      // No budget found for this month
-      return null;
-    }
-    console.error('Error fetching budget:', error);
-    return null;
+  const legacyRow = await getLegacyBudgetRowWithinMonth(year, month);
+  if (legacyRow) return legacyRow;
+
+  // Auto-create the current month budget from the previous month.
+  // Requirement: this should happen when a new month starts.
+  if (isFirstDayOfMonth) {
+    return await createBudgetFromLatestPreviousMonth(monthString);
   }
 
-  return data;
+  return null;
 }
 
 /**
@@ -359,26 +442,23 @@ export async function getCategorySpending(
  * Get budget for a specific month
  */
 export async function getMonthBudget(year: number, month: number): Promise<MonthlyBudget | null> {
-  const supabase = createServerClient();
-  
-  const firstDayOfMonth = new Date(year, month, 1);
-  const monthString = firstDayOfMonth.toISOString().split('T')[0];
+  const monthString = toMonthStartKey(year, month);
+  const now = new Date();
+  const isCurrentMonth = now.getFullYear() === year && now.getMonth() === month;
+  const isFirstDayOfMonth = now.getDate() === 1;
 
-  const { data, error } = await supabase
-    .from('monthly_budgets')
-    .select('*')
-    .eq('month', monthString)
-    .single();
+  const exact = await getBudgetRowByExactMonth(monthString);
+  if (exact) return exact;
 
-  if (error) {
-    if (error.code === 'PGRST116') {
-      return null;
-    }
-    console.error('Error fetching budget:', error);
-    return null;
+  const legacyRow = await getLegacyBudgetRowWithinMonth(year, month);
+  if (legacyRow) return legacyRow;
+
+  // Same auto-create behavior when user opens Budget tab on month start.
+  if (isCurrentMonth && isFirstDayOfMonth) {
+    return await createBudgetFromLatestPreviousMonth(monthString);
   }
 
-  return data;
+  return null;
 }
 
 /**

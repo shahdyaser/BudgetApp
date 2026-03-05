@@ -4,6 +4,10 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from './supabase-server';
 import { DEFAULT_CATEGORIES, type CategoryConfig } from './category-registry';
 
+function toMonthStartKey(year: number, monthIndex: number): string {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+}
+
 /**
  * Deletes a transaction by its ID
  */
@@ -269,8 +273,7 @@ export async function upsertMonthlyBudget(month: string, amount: number) {
     const monthDate = new Date(month);
     const year = monthDate.getFullYear();
     const monthIndex = monthDate.getMonth();
-    const firstDayOfMonth = new Date(year, monthIndex, 1);
-    const monthString = firstDayOfMonth.toISOString().split('T')[0];
+    const monthString = toMonthStartKey(year, monthIndex);
 
     const { data, error } = await supabase
       .from('monthly_budgets')
